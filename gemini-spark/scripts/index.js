@@ -372,17 +372,18 @@ async function run() {
     
     console.log('Waiting for response to generate...');
     
-    // We check every 500ms if the response text has stopped changing
+    // We check if the response text has stopped changing
     let lastResponseText = '';
     let stableCount = 0;
-    const maxStableChecks = 6; // 3 seconds of no changes
+    let maxStableChecks = 6; // 3 seconds of no changes
     let responseFound = false;
     let checkAttempts = 0;
-    let maxAttempts = 120; // Max 60 seconds (extended dynamically to 10 minutes for deep research)
+    let maxAttempts = 120; // Max 60 seconds
+    let checkInterval = 500; // 500ms default
     let hasClickedStartResearch = false;
     
     while (stableCount < maxStableChecks && checkAttempts < maxAttempts) {
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(checkInterval);
       checkAttempts++;
       
       const currentText = await page.evaluate((initCounts) => {
@@ -453,12 +454,17 @@ async function run() {
         });
         
         if (startResearchClicked) {
-          console.log('[INFO] "Start research" / "Başla" button detected and clicked automatically. Resetting response monitoring for deep research...');
+          console.log('[INFO] "Start research" / "Başla" button detected and clicked automatically. Switching to 1-minute polling interval for deep research...');
           hasClickedStartResearch = true;
           stableCount = 0;
           responseFound = false;
           lastResponseText = '';
-          maxAttempts = 1200; // Extend wait limit up to 10 minutes for deep research
+          
+          // Switch to 1-minute polling interval
+          checkInterval = 60000; // 1 minute
+          maxAttempts = 10;      // 10 minutes total wait
+          maxStableChecks = 2;   // Stable if unchanged for 2 minutes (2 consecutive checks)
+          checkAttempts = 0;     // Reset attempts
           await page.waitForTimeout(4000);
         }
       }
