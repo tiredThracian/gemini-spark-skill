@@ -1,0 +1,13 @@
+gemini-spark/chrome-profile/
+gemini-spark/node_modules/
+gemini-spark/last-chat-url.txt
+gemini-spark/last-chat-list.json
+gemini-spark/downloaded-doc-*.txt
+gemini-spark/downloaded-sheet-*.xlsx
+gemini-spark/downloaded-slides-*.pptx
+gemini-deep-research/last-chat-url.txt
+gemini-deep-research/last-chat-list.json
+gemini-deep-research/downloaded-doc-*.txt
+gemini-deep-research/downloaded-sheet-*.xlsx
+gemini-deep-research/downloaded-slides-*.pptx
+.git/

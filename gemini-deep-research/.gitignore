@@ -1,0 +1,8 @@
+last-chat-url.txt
+last-chat-list.json
+downloaded-doc-*.txt
+downloaded-sheet-*.xlsx
+downloaded-slides-*.pptx
+chrome-profile/
+node_modules/
+.git/
