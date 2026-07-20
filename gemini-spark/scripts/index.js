@@ -353,7 +353,8 @@ async function run() {
     const maxStableChecks = 6; // 3 seconds of no changes
     let responseFound = false;
     let checkAttempts = 0;
-    const maxAttempts = 120; // Max 60 seconds
+    let maxAttempts = 120; // Max 60 seconds (extended dynamically to 10 minutes for deep research)
+    let hasClickedStartResearch = false;
     
     while (stableCount < maxStableChecks && checkAttempts < maxAttempts) {
       await page.waitForTimeout(500);
@@ -400,6 +401,40 @@ async function run() {
         } else {
           stableCount = 0;
           lastResponseText = currentText;
+        }
+      }
+      
+      // Auto-detect and click "Start research" / "Araştırmayı başlat" button if present
+      if (!hasClickedStartResearch) {
+        const startResearchClicked = await page.evaluate(() => {
+          const candidates = Array.from(document.querySelectorAll('button, [role="button"]'));
+          const startBtn = candidates.find(btn => {
+            const text = (btn.innerText || '').toLowerCase().trim();
+            return text.includes('start research') || 
+                   text.includes('araştırmayı başlat') || 
+                   text.includes('araştırmaya başla') ||
+                   text.includes('başlat') || 
+                   text === 'başla';
+          });
+          
+          if (startBtn) {
+            const rect = startBtn.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+              startBtn.click();
+              return true;
+            }
+          }
+          return false;
+        });
+        
+        if (startResearchClicked) {
+          console.log('[INFO] "Start research" / "Başla" button detected and clicked automatically. Resetting response monitoring for deep research...');
+          hasClickedStartResearch = true;
+          stableCount = 0;
+          responseFound = false;
+          lastResponseText = '';
+          maxAttempts = 1200; // Extend wait limit up to 10 minutes for deep research
+          await page.waitForTimeout(4000);
         }
       }
       
