@@ -454,16 +454,16 @@ async function run() {
         });
         
         if (startResearchClicked) {
-          console.log('[INFO] "Start research" / "Başla" button detected and clicked automatically. Switching to 1-minute polling interval for deep research...');
+          console.log('[INFO] "Start research" / "Başla" button detected and clicked automatically. Switching to 5-second polling interval for deep research...');
           hasClickedStartResearch = true;
           stableCount = 0;
           responseFound = false;
           lastResponseText = '';
           
-          // Switch to 1-minute polling interval
-          checkInterval = 60000; // 1 minute
-          maxAttempts = 10;      // 10 minutes total wait
-          maxStableChecks = 2;   // Stable if unchanged for 2 minutes (2 consecutive checks)
+          // Switch to 5-second polling interval to balance responsiveness and stability
+          checkInterval = 5000;  // 5 seconds
+          maxAttempts = 120;     // 10 minutes total wait (120 attempts * 5s)
+          maxStableChecks = 6;   // Stable if unchanged for 30 seconds (6 consecutive checks * 5s) to allow slow search steps
           checkAttempts = 0;     // Reset attempts
           await page.waitForTimeout(4000);
         }
