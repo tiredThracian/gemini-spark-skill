@@ -297,6 +297,7 @@ async function run() {
     if (isDeep) {
       console.log('Attempting to activate Deep Research / Thinking mode...');
       try {
+        // 1. Check for the standard toggle button
         const deepToggle = page.locator('button[aria-label*="Deep Research" i], button[aria-label*="Derin Araştırma" i], button[aria-label*="Thinking" i], [role="button"]:has-text("Deep Research"), [role="button"]:has-text("Thinking")').first();
         if (await deepToggle.count() > 0 && await deepToggle.isVisible()) {
           const isChecked = await deepToggle.getAttribute('aria-checked') === 'true' || 
@@ -304,13 +305,37 @@ async function run() {
                             (await deepToggle.getAttribute('class') || '').includes('checked');
           if (!isChecked) {
             await deepToggle.click();
-            console.log('[OK] Deep Research / Thinking mode activated.');
+            console.log('[OK] Deep Research / Thinking mode activated via toggle button.');
             await page.waitForTimeout(2000);
           } else {
             console.log('[INFO] Deep Research / Thinking mode is already active.');
           }
         } else {
-          console.log('[WARN] Deep Research / Thinking toggle button not found on this page.');
+          // 2. Fallback: Check for model selector dropdown
+          console.log('[INFO] Toggle button not found. Checking for model selector dropdown...');
+          const modelDropdown = page.locator('button:has-text("Flash-Lite"), button:has-text("Flash"), button:has-text("Pro"), [role="button"]:has-text("Flash-Lite"), [role="button"]:has-text("Flash"), [role="button"]:has-text("Pro"), button[aria-haspopup="true"]').first();
+          if (await modelDropdown.count() > 0 && await modelDropdown.isVisible()) {
+            // Check if it is already showing "Extended thinking"
+            const dropdownText = (await modelDropdown.innerText() || '').toLowerCase();
+            if (dropdownText.includes('extended thinking') || dropdownText.includes('thinking')) {
+              console.log('[INFO] Extended thinking model is already selected.');
+            } else {
+              await modelDropdown.click();
+              await page.waitForTimeout(1500);
+              
+              // Locate option containing "Extended thinking" or "Thinking"
+              const targetItem = page.locator('[role="menuitem"]:has-text("Extended thinking"), [role="option"]:has-text("Extended thinking"), li:has-text("Extended thinking"), button:has-text("Extended thinking"), [role="menuitem"]:has-text("Thinking"), [role="option"]:has-text("Thinking"), li:has-text("Thinking"), button:has-text("Thinking")').first();
+              if (await targetItem.count() > 0 && await targetItem.isVisible()) {
+                await targetItem.click();
+                console.log('[OK] Extended thinking model selected from dropdown.');
+                await page.waitForTimeout(2000);
+              } else {
+                console.log('[WARN] "Extended thinking" option not found in dropdown menu.');
+              }
+            }
+          } else {
+            console.log('[WARN] Neither Deep Research toggle button nor model selector dropdown was found.');
+          }
         }
       } catch (deepError) {
         console.log('[WARN] Could not toggle Deep Research:', deepError.message);
