@@ -4,7 +4,8 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_DATA_DIR = path.resolve(__dirname, '../chrome-profile');
+const GLOBAL_PROFILE = 'C:\\Users\\ibrah\\.gemini\\config\\skills\\gemini-spark\\chrome-profile';
+const USER_DATA_DIR = fs.existsSync(GLOBAL_PROFILE) ? GLOBAL_PROFILE : path.resolve(__dirname, '../chrome-profile');
 
 async function run() {
   const args = process.argv.slice(2);
@@ -25,6 +26,14 @@ async function run() {
     args.splice(listIndex, 1);
   }
   
+  // Parse arguments to look for --new or -n or --new-chat
+  let shouldStartNew = false;
+  const newIndex = args.findIndex(arg => arg === '--new' || arg === '-n' || arg === '--new-chat');
+  if (newIndex !== -1) {
+    shouldStartNew = true;
+    args.splice(newIndex, 1);
+  }
+
   // Parse arguments to look for --continue or -c
   let continueTarget = null;
   let shouldContinue = false;
@@ -39,6 +48,11 @@ async function run() {
       args.splice(continueIndex, 1);
     }
   }
+
+  // DEFAULT BEHAVIOR: Automatically continue active conversation unless user requested a new chat or listing
+  if (!shouldStartNew && !shouldContinue && !shouldList) {
+    shouldContinue = true;
+  }
   
   // Parse arguments to look for --deep or -d
   let isDeep = false;
@@ -47,11 +61,19 @@ async function run() {
     isDeep = true;
     args.splice(deepIndex, 1);
   }
+
+  // Parse arguments to look for --image or -i
+  let isImage = false;
+  const imageIndex = args.findIndex(arg => arg === '--image' || arg === '-i');
+  if (imageIndex !== -1) {
+    isImage = true;
+    args.splice(imageIndex, 1);
+  }
   
   const prompt = args.join(' ');
   
   if (!shouldList && !prompt && !filePath) {
-    console.log('Usage: node index.js [--file path/to/file] [--continue <index_or_id>] [--deep] [--list] "your prompt here"');
+    console.log('Usage: node index.js [--new] [--continue <index_or_id>] [--file path/to/file] [--list] "your prompt here"');
     return;
   }
   
@@ -78,8 +100,8 @@ async function run() {
     });
     const page = await context.newPage();
     try {
-      console.log('Navigating to Gemini to fetch chat list...');
-      await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      console.log('Navigating directly to Spark tasks list...');
+      await page.goto('https://gemini.google.com/spark/tasks', { waitUntil: 'domcontentloaded', timeout: 30000 });
       
       // Check if we are redirected to the Google Login page
       if (page.url().includes('accounts.google.com')) {
@@ -91,33 +113,36 @@ async function run() {
 
       await page.waitForTimeout(4000);
       
-      // Toggle sidebar open if closed
-      const sidebarButton = page.locator('button[aria-label*="Kenar" i], button[aria-label*="Menu" i], button[aria-label*="sidebar" i]').first();
-      if (await sidebarButton.count() > 0 && await sidebarButton.isVisible()) {
-        await sidebarButton.click();
-        await page.waitForTimeout(1000);
+      try {
+        await page.waitForSelector('div.goal-card', { timeout: 15000 });
+        console.log('Task cards loaded.');
+      } catch (e) {
+        console.log('No task cards loaded or timeout occurred.');
       }
+      await page.waitForTimeout(2000);
       
       const chats = await page.evaluate(() => {
-        const aTags = Array.from(document.querySelectorAll('a'));
-        return aTags
-          .map(a => {
-            const href = a.getAttribute('href') || '';
-            const match = href.match(/\/app\/([a-f0-9]+)$/);
-            return {
-              id: match ? match[1] : null,
-              title: (a.innerText || '').trim() || a.getAttribute('aria-label') || 'Sohbet'
-            };
-          })
-          .filter(c => c.id);
+        const cards = Array.from(document.querySelectorAll('div.goal-card'));
+        return cards.map(card => {
+          const idAttr = card.getAttribute('id') || '';
+          const match = idAttr.match(/^goal-c_([a-f0-9]+)$/);
+          const titleEl = card.querySelector('.goal-description');
+          const isScheduled = !!card.querySelector('.scheduled-icon') || !!card.querySelector('[fonticonname="schedule"]');
+          return {
+            id: match ? match[1] : null,
+            title: titleEl ? (titleEl.innerText || '').trim() : 'Görev',
+            isScheduled
+          };
+        }).filter(c => c.id);
       });
       
       if (chats.length === 0) {
-        console.log('Sohbet geçmişi bulunamadı.');
+        console.log('Spark sohbet geçmişi bulunamadı.');
       } else {
         console.log('\n--- GEMINI SPARK SOHBETLERİ ---');
         chats.forEach((chat, idx) => {
-          console.log(`[${idx + 1}] ${chat.title} (ID: ${chat.id})`);
+          const scheduledLabel = chat.isScheduled ? ' ⏱️ [Zamanlanmış]' : '';
+          console.log(`[${idx + 1}] ${chat.title} (ID: ${chat.id})${scheduledLabel}`);
         });
         console.log('-------------------------------\n');
         
@@ -145,6 +170,7 @@ async function run() {
   const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
     headless: true,
     channel: 'chrome',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
@@ -160,6 +186,13 @@ async function run() {
     let targetUrl = 'https://gemini.google.com/app';
     const lastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
     const cacheFile = path.resolve(__dirname, '../last-chat-list.json');
+    
+    if (shouldStartNew && fs.existsSync(lastChatFile)) {
+      try {
+        fs.unlinkSync(lastChatFile);
+        console.log('[INFO] Starting a new chat context as requested by --new flag.');
+      } catch (e) {}
+    }
     
     if (shouldContinue) {
       let chatId = null;
@@ -184,38 +217,80 @@ async function run() {
       } else if (fs.existsSync(lastChatFile)) {
         // Default to last saved chat URL
         const savedUrl = fs.readFileSync(lastChatFile, 'utf8').trim();
-        const match = savedUrl.match(/\/app\/([a-f0-9]+)$/);
-        if (match) {
-          chatId = match[1];
+        if (savedUrl && savedUrl.startsWith('https://gemini.google.com/')) {
+          targetUrl = savedUrl;
+          console.log(`Continuing conversation from saved URL: ${targetUrl}`);
         }
       }
       
-      if (chatId) {
+      if (continueTarget && chatId) {
         targetUrl = `https://gemini.google.com/app/${chatId}`;
         console.log(`Continuing conversation from: ${targetUrl}`);
-      } else {
-        console.log('No previous conversation found to continue. Starting a new chat.');
+      } else if (!targetUrl || targetUrl === 'https://gemini.google.com/app') {
+        if (!fs.existsSync(lastChatFile) && !continueTarget) {
+          console.log('No previous conversation found to continue. Starting a new chat.');
+        }
       }
     }
-    
+
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     
-    // Check if we are starting a new chat, and if the "Spark" tab is available, switch to it!
-    if (targetUrl === 'https://gemini.google.com/app') {
-      console.log('Checking for Spark tab...');
+    if (shouldContinue && targetUrl !== 'https://gemini.google.com/app') {
+      console.log('Waiting for previous conversation history to load...');
+      await page.waitForTimeout(4000);
       try {
-        const sparkTab = page.locator('button, [role="tab"], .app-tab').filter({ hasText: /Spark/i }).first();
-        // Wait up to 5 seconds for the tab to appear
-        await sparkTab.waitFor({ state: 'visible', timeout: 5000 }).catch(() => null);
-        if (await sparkTab.count() > 0 && await sparkTab.isVisible()) {
-          console.log('Switching to Spark tab...');
-          await sparkTab.click();
-          await page.waitForTimeout(2000);
-        } else {
-          console.log('Spark tab not found or not visible, using default tab.');
+        await page.waitForSelector('message-content, model-response, .model-response', { timeout: 8000 }).catch(() => null);
+      } catch (e) {}
+    }
+
+    if (shouldContinue) {
+      const hasHistory = await page.evaluate(() => {
+        const text = (document.body.innerText || '');
+        return text.includes('You said') || text.includes('Gemini said') || document.querySelectorAll('message-content, model-response, .model-response').length > 0;
+      });
+
+      if (!hasHistory) {
+        console.log('Conversation history not loaded directly. Attempting to resolve active conversation from Gemini sidebar...');
+        try {
+          if (page.url() !== 'https://gemini.google.com/app') {
+            await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(3000);
+          }
+
+          const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i]').first();
+          if (await openSidebarBtn.count() > 0) {
+            await openSidebarBtn.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(2000);
+          }
+
+          const recentsToggle = page.locator('button[aria-label="Toggle Recents"]').first();
+          if (await recentsToggle.count() > 0) {
+            await recentsToggle.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(1500);
+          }
+
+          const topHref = await page.evaluate(() => {
+            const links = document.querySelectorAll('a[href*="/app/"], a[href*="/spark/chat/"]');
+            for (const l of links) {
+              const h = l.getAttribute('href') || '';
+              if (h && !h.includes('download') && !h.includes('accounts.google.com') && h !== '/app') {
+                return h;
+              }
+            }
+            return null;
+          });
+
+          if (topHref) {
+            targetUrl = `https://gemini.google.com${topHref}`;
+            console.log(`[INFO] Continuing conversation from top recent chat: ${targetUrl}`);
+            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(3000);
+          } else {
+            console.log('[WARN] No previous chats found in sidebar.');
+          }
+        } catch (sidebarErr) {
+          console.log('[WARN] Sidebar resolution failed:', sidebarErr.message);
         }
-      } catch (tabError) {
-        console.log('[WARN] Could not switch to Spark tab:', tabError.message);
       }
     }
     
@@ -234,6 +309,87 @@ async function run() {
     const textboxSelector = '[role="textbox"], div[contenteditable="true"]';
     await page.waitForSelector(textboxSelector, { timeout: 15000 });
     const textbox = page.locator(textboxSelector).first();
+    
+    // Toggle Deep Research / Thinking Mode if --deep is requested
+    if (isDeep) {
+      console.log('Attempting to activate Deep Research mode...');
+      try {
+        const isAlreadyActive = await page.evaluate(() => {
+          const btn = document.querySelector('button[aria-label*="Deselect Deep research" i], button[aria-label*="Deep research" i]');
+          return btn ? (btn.getAttribute('aria-label') || '').toLowerCase().includes('deselect') : false;
+        });
+
+        if (isAlreadyActive) {
+          console.log('[INFO] Deep Research mode is already active.');
+        } else {
+          // 1. Select Pro model first if needed
+          const modelSwitcherSelector = 'button[data-test-id="bard-mode-menu-button"], button.input-area-switch';
+          await page.waitForSelector(modelSwitcherSelector, { timeout: 8000 }).catch(() => null);
+
+          const isProSelected = await page.evaluate(() => {
+            const btn = document.querySelector('button[data-test-id="bard-mode-menu-button"], button.input-area-switch');
+            if (!btn) return false;
+            const text = (btn.innerText || '').toLowerCase();
+            const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+            return text.includes('pro') || ariaLabel.includes('currently pro');
+          });
+
+          if (!isProSelected) {
+            console.log('Selecting Pro model first...');
+            const modelDropdown = page.locator('button:has-text("Flash-Lite"), button:has-text("Flash"), button:has-text("Pro"), button[aria-haspopup="true"]').first();
+            if (await modelDropdown.count() > 0) {
+              await modelDropdown.click();
+              await page.waitForTimeout(1500);
+              
+              const proItem = page.locator('gem-menu-item:has-text("Pro"), [role="menuitem"]:has-text("Pro"), [role="option"]:has-text("Pro")').first();
+              if (await proItem.count() > 0) {
+                const isDisabled = await proItem.getAttribute('aria-disabled') === 'true';
+                if (isDisabled) {
+                  console.log('[WARN] Pro model option is disabled in the menu (requires Advanced subscription).');
+                  // Press escape to close dropdown
+                  await page.keyboard.press('Escape');
+                  await page.waitForTimeout(1000);
+                } else {
+                  await proItem.click();
+                  console.log('[OK] Pro model selected from dropdown.');
+                  await page.waitForTimeout(4000);
+                }
+              }
+            }
+          }
+
+          // 2. Open attach/tools menu to click Deep Research
+          const attachButton = page.locator('button[aria-label*="Upload" i], button[aria-label*="Yükleme" i], button[aria-label*="Add" i]').first();
+          if (await attachButton.count() > 0) {
+            await attachButton.click();
+            await page.waitForTimeout(2000);
+
+            // Click "More tools" if visible
+            const moreToolsButton = page.locator('button:has-text("More tools"), [role="menuitem"]:has-text("More tools"), li:has-text("More tools")').first();
+            if (await moreToolsButton.count() > 0 && await moreToolsButton.isVisible()) {
+              console.log('Opening More tools drawer...');
+              await moreToolsButton.click();
+              await page.waitForTimeout(1500);
+            }
+
+            // Click "Deep research" menu item
+            const deepResearchItem = page.locator('button:has-text("Deep research"), [role="menuitem"]:has-text("Deep research"), li:has-text("Deep research")').first();
+            if (await deepResearchItem.count() > 0 && await deepResearchItem.isVisible()) {
+              console.log('Activating Deep Research mode...');
+              await deepResearchItem.click();
+              await page.waitForTimeout(4000);
+              console.log('[OK] Deep Research mode successfully activated.');
+            } else {
+              console.log('[WARN] Deep Research option not found in tools menu.');
+            }
+          } else {
+            console.log('[WARN] Attach button not found to open tools menu.');
+          }
+        }
+      } catch (deepError) {
+        console.log('[WARN] Could not toggle Deep Research:', deepError.message);
+      }
+    }
     
     // File Upload logic
     if (absoluteFilePath) {
@@ -254,23 +410,31 @@ async function run() {
           // Start waiting for filechooser event
           const fileChooserPromise = page.waitForEvent('filechooser', { timeout: 5000 }).catch(() => null);
           
-          // Click the attach button: "Yükleme ve araçlar" / "Upload and tools" / plus icon
-          const attachButton = page.locator('button[aria-label*="Yükleme" i], button[aria-label*="Upload" i], button[aria-label*="Add" i]').first();
-          await attachButton.waitFor({ state: 'visible', timeout: 5000 });
-          await attachButton.click();
-          console.log('Upload button clicked, waiting for menu options to open...');
+          let uploadBtn = null;
+          const filesButton = page.locator('button:has-text("Files"), button[aria-label*="File" i]').first();
+          if (await filesButton.count() > 0 && await filesButton.isVisible()) {
+            console.log('Deep Research files button is visible, clicking it...');
+            uploadBtn = filesButton;
+          } else {
+            console.log('Using standard attach button...');
+            uploadBtn = page.locator('button[aria-label*="Yükleme" i], button[aria-label*="Upload" i], button[aria-label*="Add" i]').first();
+          }
           
-          await page.waitForTimeout(1000);
+          await uploadBtn.waitFor({ state: 'visible', timeout: 5000 });
+          await uploadBtn.click();
           
-          try {
-            // Find and click the menu item for computer upload (Upload files / Bilgisayardan yükle)
-            // Using [role="menuitem"] specifically to avoid matching outer container divs
-            const menuItem = page.locator('[role="menuitem"]').filter({ hasText: /Upload files|Bilgisayardan|Dosya/i }).first();
-            await menuItem.waitFor({ state: 'visible', timeout: 3000 });
-            await menuItem.click();
-            console.log('Menu item clicked.');
-          } catch (menuError) {
-            console.log('No specific menu item clicked, checking if file chooser is active directly...');
+          // Only click the submenu item if we used the standard attach button (since filesButton triggers filechooser directly)
+          if (uploadBtn !== filesButton) {
+            console.log('Upload button clicked, waiting for menu options to open...');
+            await page.waitForTimeout(1000);
+            try {
+              const menuItem = page.locator('[role="menuitem"]').filter({ hasText: /Upload files|Bilgisayardan|Dosya/i }).first();
+              await menuItem.waitFor({ state: 'visible', timeout: 3000 });
+              await menuItem.click();
+              console.log('Menu item clicked.');
+            } catch (menuError) {
+              console.log('No specific menu item clicked, checking if file chooser is active directly...');
+            }
           }
           
           const fileChooser = await fileChooserPromise;
@@ -293,71 +457,25 @@ async function run() {
       }
     }
     
-    // Toggle Deep Research / Thinking Mode if --deep is requested
-    if (isDeep) {
-      console.log('Attempting to activate Deep Research / Thinking mode...');
-      try {
-        // 1. Check for the standard toggle button
-        const deepToggle = page.locator('button[aria-label*="Deep Research" i], button[aria-label*="Derin Araştırma" i], button[aria-label*="Thinking" i], [role="button"]:has-text("Deep Research"), [role="button"]:has-text("Thinking")').first();
-        if (await deepToggle.count() > 0 && await deepToggle.isVisible()) {
-          const isChecked = await deepToggle.getAttribute('aria-checked') === 'true' || 
-                            await deepToggle.getAttribute('aria-pressed') === 'true' ||
-                            (await deepToggle.getAttribute('class') || '').includes('checked');
-          if (!isChecked) {
-            await deepToggle.click();
-            console.log('[OK] Deep Research / Thinking mode activated via toggle button.');
-            await page.waitForTimeout(2000);
-          } else {
-            console.log('[INFO] Deep Research / Thinking mode is already active.');
-          }
-        } else {
-          // 2. Fallback: Check for model selector dropdown
-          console.log('[INFO] Toggle button not found. Checking for model selector dropdown...');
-          const modelDropdown = page.locator('button:has-text("Flash-Lite"), button:has-text("Flash"), button:has-text("Pro"), [role="button"]:has-text("Flash-Lite"), [role="button"]:has-text("Flash"), [role="button"]:has-text("Pro"), button[aria-haspopup="true"]').first();
-          if (await modelDropdown.count() > 0 && await modelDropdown.isVisible()) {
-            // Check if it is already showing "Extended thinking"
-            const dropdownText = (await modelDropdown.innerText() || '').toLowerCase();
-            if (dropdownText.includes('extended thinking') || dropdownText.includes('thinking')) {
-              console.log('[INFO] Extended thinking model is already selected.');
-            } else {
-              await modelDropdown.click();
-              await page.waitForTimeout(1500);
-              
-              // Locate option containing "Extended thinking" or "Thinking"
-              const targetItem = page.locator('[role="menuitem"]:has-text("Extended thinking"), [role="option"]:has-text("Extended thinking"), li:has-text("Extended thinking"), button:has-text("Extended thinking"), [role="menuitem"]:has-text("Thinking"), [role="option"]:has-text("Thinking"), li:has-text("Thinking"), button:has-text("Thinking")').first();
-              if (await targetItem.count() > 0 && await targetItem.isVisible()) {
-                await targetItem.click();
-                console.log('[OK] Extended thinking model selected from dropdown.');
-                await page.waitForTimeout(2000);
-              } else {
-                console.log('[WARN] "Extended thinking" option not found in dropdown menu.');
-              }
-            }
-          } else {
-            console.log('[WARN] Neither Deep Research toggle button nor model selector dropdown was found.');
-          }
-        }
-      } catch (deepError) {
-        console.log('[WARN] Could not toggle Deep Research:', deepError.message);
-      }
-    }
-    
     if (prompt) {
-      console.log('Typing prompt...');
-      await textbox.focus();
-      await textbox.fill(prompt);
+      console.log('Typing prompt with realistic keystrokes...');
+      await textbox.click();
+      await page.keyboard.type(prompt, { delay: 5 });
       await page.waitForTimeout(1000);
     }
     
-    // Detect initial number of response elements for all candidate selectors before sending the new message
+    // Capture initial counts of response elements
     const initialCounts = await page.evaluate(() => {
       const selectors = [
         'message-content',
         'shared-response-renderer',
         'inline-response-renderer',
+        'model-response',
         '.model-response',
         'div[class*="model-response"]',
-        'div[class*="response"]'
+        'div[class*="response"]',
+        'response-container',
+        '.response-container'
       ];
       const counts = {};
       for (const selector of selectors) {
@@ -375,7 +493,7 @@ async function run() {
     // We check if the response text has stopped changing
     let lastResponseText = '';
     let stableCount = 0;
-    let maxStableChecks = 6; // 3 seconds of no changes
+    let maxStableChecks = 8; // 4 seconds of consecutive no text changes
     let responseFound = false;
     let checkAttempts = 0;
     let maxAttempts = 120; // Max 60 seconds
@@ -391,9 +509,12 @@ async function run() {
           'message-content',
           'shared-response-renderer',
           'inline-response-renderer',
+          'model-response',
           '.model-response',
           'div[class*="model-response"]',
-          'div[class*="response"]'
+          'div[class*="response"]',
+          'response-container',
+          '.response-container'
         ];
         
         let latestEl = null;
@@ -403,6 +524,16 @@ async function run() {
           if (elements.length > initialVal) {
             latestEl = elements[elements.length - 1];
             break;
+          }
+        }
+        
+        if (!latestEl) {
+          const modelHeaders = document.querySelectorAll('h2.screen-reader-model-response-label');
+          if (modelHeaders.length > 0) {
+            const lastHeader = modelHeaders[modelHeaders.length - 1];
+            if (lastHeader.parentElement) {
+              latestEl = lastHeader.parentElement;
+            }
           }
         }
         
@@ -470,14 +601,26 @@ async function run() {
       }
       
       const isStopButtonVisible = await page.evaluate(() => {
-        const stopBtn = document.querySelector('button[aria-label*="Stop" i], button[aria-label*="Durdur" i]');
-        if (!stopBtn) return false;
-        const rect = stopBtn.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
+        const stopSelectors = [
+          'button[aria-label*="Stop" i]',
+          'button[aria-label*="Durdur" i]',
+          'button[aria-label*="Cancel" i]',
+          'button[aria-label*="İptal" i]',
+          'mat-icon[fonticon="stop"]',
+          'gem-icon[fonticonname="stop"]'
+        ];
+        for (const sel of stopSelectors) {
+          const el = document.querySelector(sel);
+          if (el) {
+            const rect = el.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) return true;
+          }
+        }
+        return false;
       });
       
-      if (!isStopButtonVisible && responseFound && stableCount >= 2) {
-        console.log('Generation stopped (Stop button is hidden).');
+      if (!isStopButtonVisible && responseFound && stableCount >= maxStableChecks) {
+        console.log('Generation completed (text is fully stable and Stop button is hidden).');
         break;
       }
     }
@@ -589,22 +732,124 @@ async function run() {
         }
       }
       
+      // Image download logic for the latest response
+      let imageBlobs = [];
+      try {
+        imageBlobs = await page.evaluate((initCounts) => {
+          const selectors = [
+            'message-content',
+            'shared-response-renderer',
+            'inline-response-renderer',
+            '.model-response',
+            'div[class*="model-response"]',
+            'div[class*="response"]'
+          ];
+          let latestEl = null;
+          for (const selector of selectors) {
+            const elements = document.querySelectorAll(selector);
+            const initialVal = initCounts[selector] || 0;
+            if (elements.length > initialVal) {
+              latestEl = elements[elements.length - 1];
+              break;
+            }
+          }
+          if (!latestEl) {
+            const divs = Array.from(document.querySelectorAll('div'));
+            const candidates = divs.filter(d => d.className && d.className.includes('response') && d.innerText && d.innerText.length > 10);
+            if (candidates.length > 0) {
+              latestEl = candidates[candidates.length - 1];
+            }
+          }
+          if (!latestEl) return [];
+
+          function deepFindImages(root, results = []) {
+            if (!root) return results;
+            const imgs = root.querySelectorAll('img');
+            imgs.forEach(img => {
+              const src = img.getAttribute('src') || '';
+              if (src.startsWith('blob:')) {
+                results.push(src);
+              }
+            });
+            const allElements = root.querySelectorAll('*');
+            allElements.forEach(el => {
+              if (el.shadowRoot) {
+                deepFindImages(el.shadowRoot, results);
+              }
+            });
+            return results;
+          }
+
+          return Array.from(new Set(deepFindImages(latestEl)));
+        }, initialCounts);
+      } catch (err) {
+        console.log('[WARN] Error finding image blobs:', err.message);
+      }
+
+      if (imageBlobs.length > 0) {
+        console.log(`[INFO] Found ${imageBlobs.length} generated image(s) in response. Downloading...`);
+        for (let i = 0; i < imageBlobs.length; i++) {
+          const blobUrl = imageBlobs[i];
+          try {
+            console.log(`[INFO] Downloading image ${i + 1}/${imageBlobs.length}...`);
+            const base64Data = await page.evaluate(async (url) => {
+              const response = await fetch(url);
+              const blob = await response.blob();
+              return new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(blob);
+              });
+            }, blobUrl);
+
+            const base64Content = base64Data.split(';base64,').pop();
+            const buffer = Buffer.from(base64Content, 'base64');
+            
+            const timestamp = Date.now();
+            const filename = `generated-image-${timestamp}-${i}.png`;
+            const localPath = path.resolve(__dirname, `../${filename}`);
+            
+            fs.writeFileSync(localPath, buffer);
+            console.log(`[OK] Image downloaded locally: ${localPath}`);
+            
+            const currentWorkingDir = process.cwd();
+            const destPath = path.resolve(currentWorkingDir, filename);
+            fs.copyFileSync(localPath, destPath);
+            console.log(`[OK] Copied image to active directory: ${destPath}`);
+          } catch (imgErr) {
+            console.error(`[WARNING] Could not download image ${i + 1}:`, imgErr.message);
+          }
+        }
+      }
+      
       // Wait for session synchronization and URL update
-      console.log('Saving conversation state...');
-      await page.waitForTimeout(5000);
-      const finalUrl = page.url();
-      if (finalUrl.startsWith('https://gemini.google.com/app/') && finalUrl !== 'https://gemini.google.com/app') {
+      console.log('Saving conversation state and syncing with Google servers...');
+      await page.waitForTimeout(6500);
+      let finalUrl = page.url();
+      if (finalUrl === 'https://gemini.google.com/app' || finalUrl === 'https://gemini.google.com/spark') {
+        try {
+          await page.waitForURL(url => {
+            const u = url.toString();
+            return (u.includes('/app/') && u !== 'https://gemini.google.com/app') || u.includes('/spark/chat/');
+          }, { timeout: 10000 }).catch(() => null);
+          finalUrl = page.url();
+        } catch (e) {}
+      }
+      
+      if (finalUrl.includes('/spark/chat/') || (finalUrl.startsWith('https://gemini.google.com/app/') && finalUrl !== 'https://gemini.google.com/app')) {
         const lastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
         fs.writeFileSync(lastChatFile, finalUrl, 'utf8');
         console.log(`[INFO] Conversation saved: ${finalUrl}`);
       }
     }
-    
   } catch (error) {
     console.error('An error occurred during execution:', error);
   } finally {
     try {
-      await context.close();
+      if (page) await page.close().catch(() => {});
+      console.log('Flushing session data to disk...');
+      await new Promise(resolve => setTimeout(resolve, 4000));
+      if (context) await context.close().catch(() => {});
     } catch (e) {}
     process.exit(0);
   }

@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ==========================================================
-echo    Gemini Spark ve Deep Research Yetenekleri Kurulum Aracı
+echo       Gemini Spark Yeteneği Kurulum Aracı
 echo ==========================================================
 echo.
 
@@ -17,31 +17,24 @@ if %errorlevel% neq 0 (
 
 :: 2. Global Dizinlerin Tanımlanması
 set "GLOBAL_SPARK_DIR=%USERPROFILE%\.gemini\config\skills\gemini-spark"
-set "GLOBAL_DEEP_DIR=%USERPROFILE%\.gemini\config\skills\gemini-deep-research"
 
-echo [1/4] Yetenek dosyaları global dizinlere yükleniyor...
+echo [1/4] Yetenek dosyaları global dizine yükleniyor...
 echo Spark Hedef: %GLOBAL_SPARK_DIR%
-echo Deep Research Hedef: %GLOBAL_DEEP_DIR%
 
-:: Geçici hariç tutma dosyaları oluştur
+:: Geçici hariç tutma dosyası oluştur
 echo \node_modules\ > "%temp%\exclude_spark.txt"
 echo \chrome-profile\ >> "%temp%\exclude_spark.txt"
 echo \.git\ >> "%temp%\exclude_spark.txt"
 echo last-chat-url.txt >> "%temp%\exclude_spark.txt"
 echo last-chat-list.json >> "%temp%\exclude_spark.txt"
 
-echo \.git\ > "%temp%\exclude_deep.txt"
-
-:: Hedef klasörleri oluştur
+:: Hedef klasörü oluştur
 if not exist "%GLOBAL_SPARK_DIR%" mkdir "%GLOBAL_SPARK_DIR%"
-if not exist "%GLOBAL_DEEP_DIR%" mkdir "%GLOBAL_DEEP_DIR%"
 
 :: Dosyaları kopyala
 xcopy /E /I /Y /EXCLUDE:%temp%\exclude_spark.txt "%~dp0gemini-spark\*" "%GLOBAL_SPARK_DIR%" >nul
-xcopy /E /I /Y /EXCLUDE:%temp%\exclude_deep.txt "%~dp0gemini-deep-research\*" "%GLOBAL_DEEP_DIR%" >nul
 
 del "%temp%\exclude_spark.txt"
-del "%temp%\exclude_deep.txt"
 
 echo [OK] Dosyalar başarıyla kopyalandı!
 echo.
@@ -87,9 +80,9 @@ pause
 
 echo.
 echo ==========================================================
-echo [TEBRİKLER] Gemini Spark ve Deep Research Yetenekleri Yüklendi!
+echo [TEBRİKLER] Gemini Spark Yeteneği Yüklendi!
 echo.
-echo Artık Antigravity üzerinden her iki yeteneği de
+echo Artık Antigravity üzerinden Gemini Spark yeteneğini
 echo kullanmaya başlayabilirsiniz.
 echo ==========================================================
 echo.
