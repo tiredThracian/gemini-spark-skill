@@ -21,8 +21,14 @@ By default, **every query automatically continues the active Spark conversation*
 To interact with Gemini Spark, run the script:
 
 ```bash
-node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [--new] [--continue <index_or_id>] [--file "path/to/file"] [--list] "Your query here"
+node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
 ```
+
+### Architectural Features & Options
+*   **Structured JSON Output (`--json`)**: Emits clean machine-readable JSON payload containing `status`, `thread_id`, `url`, `response`, and `downloaded_files`.
+*   **Profile Isolation (`--profile <name>`)**: Launches an isolated Chrome user-data profile (`chrome-profile-<name>`), preventing file-lock collisions when running parallel AGY agents.
+*   **Async Dispatch (`--no-wait`)**: Submits prompt, captures thread ID immediately, and exits returning `{"status": "pending"}` without waiting for full text generation.
+*   **Wait Subcommand (`wait [thread_id]`)**: Polls and waits for thread text generation to complete, returning `{"status": "completed", "response": "..."}`.
 
 ### Examples
 *   **Default Multi-Turn Query (Continues Active Conversation):**
@@ -30,17 +36,27 @@ node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [--new] 
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js "What is the capital of France?"
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js "What is its population?"  # Automatically continues previous context!
     ```
+*   **Structured JSON API Mode:**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --json "Explain quantum entanglement"
+    ```
+*   **Parallel Agent Execution (Isolated Profile):**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --profile worker-1 --json "Query A"
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --profile worker-2 --json "Query B"
+    ```
+*   **Async Dispatch & Background Wait:**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --no-wait --json "Perform deep research on solar power"
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js wait --json
+    ```
 *   **Start a Fresh Conversation Task (`--new`):**
     ```bash
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --new "Let's start a brand new topic on quantum mechanics."
     ```
 *   **List Existing Conversations:**
     ```bash
-    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --list
-    ```
-*   **Switch to / Continue Specific Conversation by Index:**
-    ```bash
-    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --continue 1 "Explain this in detail"
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js list --json
     ```
 *   **Switch to / Continue Specific Conversation by ID:**
     ```bash
