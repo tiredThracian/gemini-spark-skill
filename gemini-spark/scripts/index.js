@@ -65,9 +65,9 @@ async function run() {
     args.splice(cdpIndex, 2);
   }
 
-  // Parse subcommands: wait, list, ask, login, delete, rm, verbatim, accounts, profiles
+  // Parse subcommands: wait, list, ask, login, delete, rm, verbatim, accounts, profiles, rename
   let subcommand = null;
-  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove', 'verbatim', 'accounts', 'profiles'].includes(args[0].toLowerCase())) {
+  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove', 'verbatim', 'accounts', 'profiles', 'rename'].includes(args[0].toLowerCase())) {
     subcommand = args.shift().toLowerCase();
   }
 
@@ -99,6 +99,19 @@ async function run() {
   let deleteTarget = null;
   if (isDeleteSubcommand && args.length > 0 && !args[0].startsWith('-')) {
     deleteTarget = args.shift();
+  }
+
+  // Parse rename subcommand
+  let isRenameSubcommand = subcommand === 'rename';
+  let renameTarget = null;
+  let newTitle = null;
+  if (isRenameSubcommand) {
+    if (args.length >= 2 && !args[0].startsWith('-')) {
+      renameTarget = args.shift();
+      newTitle = args.join(' ');
+    } else if (args.length === 1 && !args[0].startsWith('-')) {
+      newTitle = args.shift();
+    }
   }
 
   // Parse --file or -f
@@ -174,8 +187,8 @@ async function run() {
   
   const prompt = args.join(' ');
   
-  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !isDeleteSubcommand && !isAccountsSubcommand && !prompt && !filePath) {
-    log('Usage: node index.js [ask|wait|list|login|delete|verbatim|accounts] [--account <name>] [--verbatim] [--new] [--continue <index_or_id>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
+  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !isDeleteSubcommand && !isAccountsSubcommand && !isRenameSubcommand && !prompt && !filePath) {
+    log('Usage: node index.js [ask|wait|list|login|delete|rename|verbatim|accounts] [--account <name>] [--verbatim] [--new] [--continue <index_or_id>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
     if (isJsonOutput) {
       outputJson({ status: "error", error: "Missing required prompt, file, or subcommand" });
     }
@@ -635,6 +648,158 @@ async function run() {
         if (isJsonOutput) outputJson({ status: "error", error: delErr.message });
       } finally {
         await context.close().catch(() => {});
+        process.exit(0);
+      }
+    }
+
+    // 4. Rename subcommand
+    if (isRenameSubcommand) {
+      log('Running rename subcommand...');
+      const profileLastChatFile = path.resolve(USER_DATA_DIR, 'last-chat-url.txt');
+      const legacyLastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
+      const profileCacheFile = path.resolve(USER_DATA_DIR, 'last-chat-list.json');
+      const legacyCacheFile = path.resolve(__dirname, '../last-chat-list.json');
+
+      if (!newTitle) {
+        logError('[ERROR] Missing new title for rename.');
+        if (isJsonOutput) outputJson({ status: "error", error: "Missing new title" });
+        if (!cdpTarget && context) await context.close().catch(() => {});
+        process.exit(1);
+      }
+
+      let chatId = renameTarget;
+      if (!chatId) {
+        const lastChatFile = fs.existsSync(profileLastChatFile) ? profileLastChatFile : legacyLastChatFile;
+        if (fs.existsSync(lastChatFile)) {
+          const savedUrl = fs.readFileSync(lastChatFile, 'utf8').trim();
+          const match = savedUrl.match(/\/app\/([a-f0-9]+)/) || savedUrl.match(/\/spark\/chat\/([a-f0-9]+)/);
+          if (match) chatId = match[1];
+        }
+      }
+
+      const targetIndex = parseInt(chatId, 10);
+      const cacheFile = fs.existsSync(profileCacheFile) ? profileCacheFile : legacyCacheFile;
+      if (!isNaN(targetIndex) && fs.existsSync(cacheFile)) {
+        const chats = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        if (targetIndex >= 1 && targetIndex <= chats.length) {
+          chatId = chats[targetIndex - 1].id;
+          log(`Index ${targetIndex} resolved to Chat ID: ${chatId}`);
+        }
+      }
+
+      if (!chatId) {
+        logError('[ERROR] Could not determine target conversation ID to rename.');
+        if (isJsonOutput) outputJson({ status: "error", error: "Target conversation ID required" });
+        if (!cdpTarget && context) await context.close().catch(() => {});
+        process.exit(1);
+      }
+
+      log(`Renaming conversation ${chatId} to "${newTitle}"...`);
+      try {
+        let renamed = false;
+
+        // Step A: Check Gemini sidebar on https://gemini.google.com/app
+        await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(3000);
+
+        const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
+        if (await openSidebarBtn.count() > 0) {
+          await openSidebarBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(1500);
+        }
+
+        const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
+        if (await recentsToggle.count() > 0) {
+          await recentsToggle.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(1500);
+        }
+
+        const chatLinkSelector = `a[href*="${chatId}"]`;
+        const chatLink = page.locator(chatLinkSelector).first();
+
+        if (await chatLink.count() > 0) {
+          await chatLink.hover().catch(() => {});
+          await page.waitForTimeout(500);
+
+          const parentItem = chatLink.locator('xpath=..');
+          const optionsBtn = parentItem.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
+          if (await optionsBtn.count() > 0) {
+            await optionsBtn.click({ force: true });
+            await page.waitForTimeout(1000);
+
+            const renameMenuItem = page.locator('div[role="menuitem"]:has-text("Yeniden adlandır"), div[role="menuitem"]:has-text("Rename"), button:has-text("Rename"), button:has-text("Yeniden adlandır"), [role="option"]:has-text("Rename"), [role="option"]:has-text("Yeniden adlandır")').first();
+            if (await renameMenuItem.count() > 0) {
+              await renameMenuItem.click({ force: true });
+              await page.waitForTimeout(1000);
+
+              const renameInput = page.locator('input[type="text"], input[aria-label*="Rename" i], input[aria-label*="Adlandır" i], textarea').first();
+              if (await renameInput.count() > 0) {
+                await renameInput.fill(newTitle);
+                await page.waitForTimeout(500);
+                await renameInput.press('Enter');
+                await page.waitForTimeout(1500);
+                renamed = true;
+                log(`[OK] Successfully renamed conversation ${chatId} to "${newTitle}" via sidebar.`);
+              }
+            }
+          }
+        }
+
+        // Step B: If not renamed via sidebar, check Spark tasks page (https://gemini.google.com/spark/tasks)
+        if (!renamed) {
+          log('Checking Spark tasks page for goal card...');
+          await page.goto('https://gemini.google.com/spark/tasks', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+
+          const goalCardSelector = `div#goal-c_${chatId}, div.goal-card[id*="${chatId}"]`;
+          const goalCard = page.locator(goalCardSelector).first();
+          if (await goalCard.count() > 0) {
+            await goalCard.hover().catch(() => {});
+            await page.waitForTimeout(500);
+
+            const optionsBtn = goalCard.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
+            if (await optionsBtn.count() > 0) {
+              await optionsBtn.click({ force: true });
+              await page.waitForTimeout(1000);
+
+              const renameMenuItem = page.locator('div[role="menuitem"]:has-text("Yeniden adlandır"), div[role="menuitem"]:has-text("Rename"), button:has-text("Rename"), button:has-text("Yeniden adlandır")').first();
+              if (await renameMenuItem.count() > 0) {
+                await renameMenuItem.click({ force: true });
+                await page.waitForTimeout(1000);
+
+                const renameInput = page.locator('input[type="text"], textarea').first();
+                if (await renameInput.count() > 0) {
+                  await renameInput.fill(newTitle);
+                  await page.waitForTimeout(500);
+                  await renameInput.press('Enter');
+                  await page.waitForTimeout(1500);
+                  renamed = true;
+                  log(`[OK] Successfully renamed Spark task card ${chatId} to "${newTitle}".`);
+                }
+              }
+            }
+          }
+        }
+
+        if (fs.existsSync(profileCacheFile)) {
+          const chats = JSON.parse(fs.readFileSync(profileCacheFile, 'utf8'));
+          const chatItem = chats.find(c => c.id === chatId);
+          if (chatItem) {
+            chatItem.title = newTitle;
+            fs.writeFileSync(profileCacheFile, JSON.stringify(chats, null, 2), 'utf8');
+          }
+        }
+
+        if (isJsonOutput) {
+          outputJson({ status: "ok", thread_id: chatId, new_title: newTitle });
+        } else {
+          log(`\n[OK] Renamed conversation ${chatId} to "${newTitle}"`);
+        }
+      } catch (renameErr) {
+        logError('[ERROR] Renaming failed:', renameErr.message);
+        if (isJsonOutput) outputJson({ status: "error", error: renameErr.message });
+      } finally {
+        if (!cdpTarget && context) await context.close().catch(() => {});
         process.exit(0);
       }
     }

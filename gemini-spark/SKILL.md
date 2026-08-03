@@ -21,10 +21,11 @@ By default, **every query automatically continues the active Spark conversation*
 To interact with Gemini Spark, run the script:
 
 ```bash
-node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login|delete|verbatim|accounts] [--account <name>] [--cdp <port_or_url>] [--verbatim] [--new] [--continue <index_or_id>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
+node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login|delete|rename|verbatim|accounts] [--account <name>] [--cdp <port_or_url>] [--verbatim] [--new] [--continue <index_or_id>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
 ```
 
 ### Architectural Features & Options
+*   **Rename Subcommand (`rename [index_or_id] "New Title"`)**: Renames a specified conversation thread or Spark task card in the Gemini web interface (e.g. `node index.js rename 3bef48082feba09d "New Project Title"` or `node index.js rename 1 "New Title"`). If no ID is specified, it renames the currently active thread.
 *   **CDP Parallel Execution (`--cdp <port_or_url>`)**: Connects over Chrome DevTools Protocol to a running Chrome instance (e.g. port `9222`). This allows multiple Playwright scripts to query the **same Google account simultaneously in parallel tabs** without profile file-locking.
 *   **Multi-Account Support (`--account <name>` / `--profile <name>`)**: Connects to specific Google accounts (e.g. `work`, `personal`, `research`). Each account maintains isolated login cookies, session memory, and thread state.
 *   **Accounts Subcommand (`accounts` or `profiles`)**: Lists all configured Google account profiles, active context state, and profile directories.
