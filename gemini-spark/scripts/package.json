@@ -4,6 +4,12 @@
   "description": "Automate Gemini Spark via Playwright",
   "main": "index.js",
   "type": "module",
+  "scripts": {
+    "setup": "npm install",
+    "login": "node index.js login",
+    "accounts": "node index.js accounts",
+    "list": "node index.js list"
+  },
   "dependencies": {
     "playwright": "^1.49.0"
   }
