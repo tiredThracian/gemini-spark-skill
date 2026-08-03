@@ -193,7 +193,7 @@ async function run() {
       }
       await page.waitForTimeout(2000);
       
-      const chats = await page.evaluate(() => {
+      let chats = await page.evaluate(() => {
         const cards = Array.from(document.querySelectorAll('div.goal-card'));
         return cards.map(card => {
           const idAttr = card.getAttribute('id') || '';
@@ -208,6 +208,55 @@ async function run() {
         }).filter(c => c.id);
       });
       
+      if (chats.length === 0) {
+        log('No goal-card tasks found on Spark tasks page. Navigating to main app page to list recent conversations...');
+        try {
+          await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+
+          const openSidebarBtn = page.locator('button[aria-label*="sidebar" i], button[aria-label*="menu" i], button[aria-label*="menü" i]').first();
+          if (await openSidebarBtn.count() > 0) {
+            await openSidebarBtn.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(2500);
+          }
+
+          const recentsToggle = page.locator('button[aria-label*="recents" i]').first();
+          if (await recentsToggle.count() > 0) {
+            await recentsToggle.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(2000);
+          }
+
+          await page.waitForFunction(() => {
+            const links = document.querySelectorAll('a[href*="/app/"], a[href*="/spark/chat/"]');
+            return Array.from(links).some(l => {
+              const h = l.getAttribute('href') || '';
+              return h && !h.includes('download') && !h.includes('accounts.google.com') && h !== '/app';
+            });
+          }, { timeout: 8000 }).catch(() => null);
+
+          const recentChats = await page.evaluate(() => {
+            const links = document.querySelectorAll('a[href*="/app/"], a[href*="/spark/chat/"]');
+            const results = [];
+            links.forEach(l => {
+              const href = l.getAttribute('href') || '';
+              if (href && !href.includes('download') && !href.includes('accounts.google.com') && href !== '/app') {
+                const match = href.match(/\/app\/([a-f0-9]+)/) || href.match(/\/spark\/chat\/([a-f0-9]+)/);
+                const id = match ? match[1] : href;
+                const title = (l.innerText || '').trim() || 'Sohbet';
+                results.push({ id, title, isScheduled: false });
+              }
+            });
+            return results;
+          });
+
+          if (recentChats.length > 0) {
+            chats = recentChats;
+          }
+        } catch (fallbackErr) {
+          log('[WARN] Recent chats fallback failed:', fallbackErr.message);
+        }
+      }
+
       if (isJsonOutput) {
         outputJson({ status: "ok", count: chats.length, chats });
       } else {
@@ -248,7 +297,7 @@ async function run() {
       '--disable-setuid-sandbox',
       '--disable-blink-features=AutomationControlled'
     ],
-    viewport: { width: 1280, height: 800 }
+    viewport: { width: 1600, height: 950 }
   });
   
   const page = await context.newPage();
@@ -368,9 +417,10 @@ async function run() {
     // Check if redirected to Google Login page
     const currentUrl = page.url();
     if (currentUrl.includes('accounts.google.com')) {
-      logError('\n[ERROR] Oturum açılmamış! (Not logged in)');
-      logError('Lütfen aşağıdaki komutu kendi bilgisayarınızın terminalinde (CMD veya PowerShell) çalıştırarak giriş yapın:\n');
-      logError(`  start chrome --remote-debugging-port=9222 --user-data-dir="${USER_DATA_DIR}"\n`);
+      logError('PowerShell:');
+      logError(`  Start-Process "chrome" -ArgumentList "--remote-debugging-port=9222", "--user-data-dir=${USER_DATA_DIR}", "https://gemini.google.com"\n`);
+      logError('CMD:');
+      logError(`  start chrome --remote-debugging-port=9222 --user-data-dir="${USER_DATA_DIR}" https://gemini.google.com\n`);
       if (isJsonOutput) outputJson({ status: "error", error: "Not logged in" });
       await context.close();
       process.exit(1);
