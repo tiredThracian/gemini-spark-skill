@@ -57,6 +57,14 @@ async function run() {
     args.splice(noWaitIndex, 1);
   }
 
+  // Parse --cdp <port_or_url> or environment variable SPARK_CDP
+  let cdpTarget = process.env.SPARK_CDP || null;
+  const cdpIndex = args.findIndex(arg => arg === '--cdp');
+  if (cdpIndex !== -1 && cdpIndex + 1 < args.length) {
+    cdpTarget = args[cdpIndex + 1];
+    args.splice(cdpIndex, 2);
+  }
+
   // Parse subcommands: wait, list, ask, login, delete, rm, verbatim, accounts, profiles
   let subcommand = null;
   if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove', 'verbatim', 'accounts', 'profiles'].includes(args[0].toLowerCase())) {
@@ -360,19 +368,29 @@ async function run() {
     }
   }
 
-  log(`Starting headless Chrome with profile: ${USER_DATA_DIR}`);
-  
-  const context = await chromium.launchPersistentContext(USER_DATA_DIR, {
-    headless: true,
-    channel: 'chrome',
-    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-blink-features=AutomationControlled'
-    ],
-    viewport: { width: 1600, height: 950 }
-  });
+  let context;
+  let browserObj = null;
+
+  if (cdpTarget) {
+    const cdpUrl = cdpTarget.startsWith('http') ? cdpTarget : `http://localhost:${cdpTarget}`;
+    log(`Connecting to active Chrome session via CDP: ${cdpUrl}`);
+    browserObj = await chromium.connectOverCDP(cdpUrl);
+    const contexts = browserObj.contexts();
+    context = contexts.length > 0 ? contexts[0] : await browserObj.newContext();
+  } else {
+    log(`Starting headless Chrome with profile: ${USER_DATA_DIR}`);
+    context = await chromium.launchPersistentContext(USER_DATA_DIR, {
+      headless: true,
+      channel: 'chrome',
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-blink-features=AutomationControlled'
+      ],
+      viewport: { width: 1600, height: 950 }
+    });
+  }
   
   const page = await context.newPage();
   const downloadedFiles = [];
@@ -1179,9 +1197,11 @@ async function run() {
   } finally {
     try {
       if (page) await page.close().catch(() => {});
-      log('Flushing session data to disk...');
-      await new Promise(resolve => setTimeout(resolve, 4000));
-      if (context) await context.close().catch(() => {});
+      if (!cdpTarget && context) {
+        log('Flushing session data to disk...');
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        await context.close().catch(() => {});
+      }
     } catch (e) {}
     process.exit(0);
   }
