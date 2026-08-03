@@ -36,9 +36,9 @@ async function run() {
     }
   };
 
-  // Parse --profile <name> or environment variable SPARK_PROFILE
-  let profileName = process.env.SPARK_PROFILE || null;
-  const profileIndex = args.findIndex(arg => arg === '--profile' || arg === '-p');
+  // Parse --profile <name>, --account <name>, -p, -a or environment variable SPARK_ACCOUNT / SPARK_PROFILE
+  let profileName = process.env.SPARK_ACCOUNT || process.env.SPARK_PROFILE || null;
+  const profileIndex = args.findIndex(arg => arg === '--profile' || arg === '-p' || arg === '--account' || arg === '-a');
   if (profileIndex !== -1 && profileIndex + 1 < args.length) {
     profileName = args[profileIndex + 1];
     args.splice(profileIndex, 2);
@@ -57,18 +57,25 @@ async function run() {
     args.splice(noWaitIndex, 1);
   }
 
-  // Parse subcommands: wait, list, ask, login, delete, rm, verbatim
+  // Parse subcommands: wait, list, ask, login, delete, rm, verbatim, accounts, profiles
   let subcommand = null;
-  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove', 'verbatim'].includes(args[0].toLowerCase())) {
+  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove', 'verbatim', 'accounts', 'profiles'].includes(args[0].toLowerCase())) {
     subcommand = args.shift().toLowerCase();
   }
 
-  // Parse --login flag
+  // Parse accounts/profiles subcommand
+  let isAccountsSubcommand = ['accounts', 'profiles'].includes(subcommand);
+
+  // Parse --login flag or login subcommand
   let isLoginSubcommand = subcommand === 'login';
   const loginIndex = args.findIndex(arg => arg === '--login');
   if (loginIndex !== -1) {
     isLoginSubcommand = true;
     args.splice(loginIndex, 1);
+  }
+  if (isLoginSubcommand && args.length > 0 && !args[0].startsWith('-')) {
+    const loginAccountTarget = args.shift();
+    profileName = loginAccountTarget;
   }
 
   // Parse --verbatim flag or verbatim subcommand
@@ -159,8 +166,8 @@ async function run() {
   
   const prompt = args.join(' ');
   
-  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !isDeleteSubcommand && !prompt && !filePath) {
-    log('Usage: node index.js [ask|wait|list|login|delete|verbatim] [--verbatim] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
+  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !isDeleteSubcommand && !isAccountsSubcommand && !prompt && !filePath) {
+    log('Usage: node index.js [ask|wait|list|login|delete|verbatim|accounts] [--account <name>] [--verbatim] [--new] [--continue <index_or_id>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
     if (isJsonOutput) {
       outputJson({ status: "error", error: "Missing required prompt, file, or subcommand" });
     }
@@ -182,6 +189,50 @@ async function run() {
   // Ensure user data profile directory exists
   if (!fs.existsSync(USER_DATA_DIR)) {
     fs.mkdirSync(USER_DATA_DIR, { recursive: true });
+  }
+
+  // Handle accounts / profiles subcommand
+  if (isAccountsSubcommand) {
+    log('Scanning for configured Google account profiles...');
+    const searchDirs = [GLOBAL_PROFILE_DIR, path.resolve(__dirname, '..')];
+    const foundProfiles = new Set(['chrome-profile']);
+    searchDirs.forEach(dir => {
+      if (fs.existsSync(dir)) {
+        const items = fs.readdirSync(dir);
+        items.forEach(item => {
+          if (item.startsWith('chrome-profile')) {
+            foundProfiles.add(item);
+          }
+        });
+      }
+    });
+
+    const accountsList = Array.from(foundProfiles).map(folder => {
+      const name = folder === 'chrome-profile' ? 'default' : folder.replace('chrome-profile-', '');
+      const fullPath = fs.existsSync(path.resolve(GLOBAL_PROFILE_DIR, folder))
+        ? path.resolve(GLOBAL_PROFILE_DIR, folder)
+        : path.resolve(__dirname, `../${folder}`);
+      const hasSavedUrl = fs.existsSync(path.resolve(fullPath, 'last-chat-url.txt'));
+      return {
+        account: name,
+        profile_folder: folder,
+        user_data_dir: fullPath,
+        has_active_context: hasSavedUrl
+      };
+    });
+
+    if (isJsonOutput) {
+      outputJson({ status: "ok", count: accountsList.length, active_account: profileName || 'default', accounts: accountsList });
+    } else {
+      log('\n--- CONFIGURED GOOGLE ACCOUNTS / PROFILES ---');
+      accountsList.forEach((acc, idx) => {
+        const activeLabel = acc.account === (profileName || 'default') ? ' ★ [ACTIVE]' : '';
+        const contextLabel = acc.has_active_context ? ' 💬 [Saved Context]' : '';
+        log(`[${idx + 1}] Account: "${acc.account}" (${acc.profile_folder})${activeLabel}${contextLabel}`);
+      });
+      log('---------------------------------------------\n');
+    }
+    return;
   }
 
   // 1. List conversations logic
