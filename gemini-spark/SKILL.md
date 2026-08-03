@@ -21,20 +21,25 @@ By default, **every query automatically continues the active Spark conversation*
 To interact with Gemini Spark, run the script:
 
 ```bash
-node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
+node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
 ```
 
 ### Architectural Features & Options
 *   **Structured JSON Output (`--json`)**: Emits clean machine-readable JSON payload containing `status`, `thread_id`, `url`, `response`, and `downloaded_files`.
-*   **Profile Isolation (`--profile <name>`)**: Launches an isolated Chrome user-data profile (`chrome-profile-<name>`), preventing file-lock collisions when running parallel AGY agents.
+*   **Profile Isolation (`--profile <name>`)**: Launches an isolated Chrome user-data profile (`chrome-profile-<name>`), preventing file-lock collisions when running parallel AGY agents. Each profile maintains its own isolated conversation memory.
 *   **Async Dispatch (`--no-wait`)**: Submits prompt, captures thread ID immediately, and exits returning `{"status": "pending"}` without waiting for full text generation.
 *   **Wait Subcommand (`wait [thread_id]`)**: Polls and waits for thread text generation to complete, returning `{"status": "completed", "response": "..."}`.
+*   **Login Subcommand (`login` or `--login`)**: Checks session login state and outputs exact commands to open Chrome with profile debugging for authentication.
 
 ### Examples
 *   **Default Multi-Turn Query (Continues Active Conversation):**
     ```bash
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js "What is the capital of France?"
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js "What is its population?"  # Automatically continues previous context!
+    ```
+*   **Session Login Verification:**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js login
     ```
 *   **Structured JSON API Mode:**
     ```bash
@@ -89,4 +94,13 @@ These files are automatically downloaded and copied directly into your active wo
 
 ## Troubleshooting & Authentication
 
-If the session expires or is not authenticated, the script will print an error containing `[ERROR] Oturum açılmamış!` or exit with code 1.
+If the session requires authentication or is not logged in:
+1. Close all active Chrome processes:
+   ```powershell
+   Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue
+   ```
+2. Launch Chrome with your skill profile:
+   ```powershell
+   Start-Process "chrome" -ArgumentList "--remote-debugging-port=9222", "--user-data-dir=C:\Users\ibrah\.gemini\config\skills\gemini-spark\chrome-profile", "https://gemini.google.com/spark"
+   ```
+3. Log into your Google Account in the opened Chrome browser window, then close Chrome and re-run your `index.js` command.

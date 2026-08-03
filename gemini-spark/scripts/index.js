@@ -57,10 +57,18 @@ async function run() {
     args.splice(noWaitIndex, 1);
   }
 
-  // Parse subcommands: wait, list, ask
+  // Parse subcommands: wait, list, ask, login
   let subcommand = null;
-  if (args.length > 0 && ['wait', 'list', 'ask'].includes(args[0].toLowerCase())) {
+  if (args.length > 0 && ['wait', 'list', 'ask', 'login'].includes(args[0].toLowerCase())) {
     subcommand = args.shift().toLowerCase();
+  }
+
+  // Parse --login flag
+  let isLoginSubcommand = subcommand === 'login';
+  const loginIndex = args.findIndex(arg => arg === '--login');
+  if (loginIndex !== -1) {
+    isLoginSubcommand = true;
+    args.splice(loginIndex, 1);
   }
 
   // Parse --file or -f
@@ -136,8 +144,8 @@ async function run() {
   
   const prompt = args.join(' ');
   
-  if (!shouldList && !isWaitSubcommand && !prompt && !filePath) {
-    log('Usage: node index.js [ask|wait|list] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
+  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !prompt && !filePath) {
+    log('Usage: node index.js [ask|wait|list|login] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
     if (isJsonOutput) {
       outputJson({ status: "error", error: "Missing required prompt, file, or subcommand" });
     }
@@ -272,7 +280,7 @@ async function run() {
         }
       }
 
-      const cacheFile = path.resolve(__dirname, '../last-chat-list.json');
+      const cacheFile = path.resolve(USER_DATA_DIR, 'last-chat-list.json');
       fs.writeFileSync(cacheFile, JSON.stringify(chats, null, 2), 'utf8');
 
     } catch (err) {
@@ -304,10 +312,43 @@ async function run() {
   const downloadedFiles = [];
 
   try {
-    log('Navigating to Gemini...');
-    let targetUrl = 'https://gemini.google.com/app';
-    const lastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
-    const cacheFile = path.resolve(__dirname, '../last-chat-list.json');
+    // 2. Login verification subcommand
+    if (isLoginSubcommand) {
+      log('Running login session verification...');
+      await page.goto('https://gemini.google.com/spark', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await page.waitForTimeout(3000);
+      const isLoggedOut = page.url().includes('accounts.google.com') || (await page.evaluate(() => !!document.querySelector('a[href*="ServiceLogin"], button[aria-label*="Oturum aç" i]')));
+      
+      if (isLoggedOut) {
+        logError('\n[NOT LOGGED IN] Google authentication is required.');
+        logError('To log in cleanly to your profile:');
+        logError('1. Close all running Chrome instances:');
+        logError('   PowerShell: Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue\n');
+        logError('2. Launch Chrome with your skill profile:');
+        logError(`   PowerShell: Start-Process "chrome" -ArgumentList "--remote-debugging-port=9222", "--user-data-dir=${USER_DATA_DIR}", "https://gemini.google.com/spark"\n`);
+        logError('3. Log into your Google Account in Chrome, then close Chrome and re-run your prompt.\n');
+        if (isJsonOutput) outputJson({ status: "error", error: "Not logged in", user_data_dir: USER_DATA_DIR });
+        await context.close();
+        process.exit(1);
+      } else {
+        log(`[OK] Session is active and authenticated for profile: ${USER_DATA_DIR}`);
+        if (isJsonOutput) outputJson({ status: "ok", message: "Authenticated", user_data_dir: USER_DATA_DIR });
+        await context.close();
+        process.exit(0);
+      }
+    }
+
+    log('Navigating to Gemini Spark...');
+    let targetUrl = 'https://gemini.google.com/spark';
+    
+    // Profile-isolated session state files with fallback to legacy location
+    const profileLastChatFile = path.resolve(USER_DATA_DIR, 'last-chat-url.txt');
+    const legacyLastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
+    const lastChatFile = fs.existsSync(profileLastChatFile) ? profileLastChatFile : legacyLastChatFile;
+
+    const profileCacheFile = path.resolve(USER_DATA_DIR, 'last-chat-list.json');
+    const legacyCacheFile = path.resolve(__dirname, '../last-chat-list.json');
+    const cacheFile = fs.existsSync(profileCacheFile) ? profileCacheFile : legacyCacheFile;
     
     if (shouldStartNew && fs.existsSync(lastChatFile)) {
       try {
@@ -344,83 +385,72 @@ async function run() {
       }
       
       if (continueTarget && chatId) {
-        targetUrl = `https://gemini.google.com/app/${chatId}`;
+        targetUrl = `https://gemini.google.com/spark/chat/${chatId}`;
         log(`Continuing conversation from: ${targetUrl}`);
-      } else if (!targetUrl || targetUrl === 'https://gemini.google.com/app') {
+      } else if (!targetUrl || targetUrl === 'https://gemini.google.com/spark' || targetUrl === 'https://gemini.google.com/app') {
+        targetUrl = 'https://gemini.google.com/spark';
         if (!fs.existsSync(lastChatFile) && !continueTarget) {
-          log('No previous conversation found to continue. Starting a new chat.');
+          log('No previous conversation found to continue. Starting a new Spark chat.');
         }
       }
     }
 
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
     
-    if (shouldContinue && targetUrl !== 'https://gemini.google.com/app') {
-      log('Waiting for previous conversation history to load...');
-      await page.waitForTimeout(4000);
+    const isSpecificThreadUrl = (targetUrl.includes('/app/') && targetUrl !== 'https://gemini.google.com/app') || targetUrl.includes('/spark/chat/');
+
+    if (shouldContinue && isSpecificThreadUrl) {
+      log('Waiting for active thread session to settle...');
+      await page.waitForTimeout(3000);
+    } else if (shouldContinue && !isSpecificThreadUrl) {
+      log('No explicit thread URL. Resolving active conversation from Gemini sidebar...');
       try {
-        await page.waitForSelector('message-content, model-response, .model-response', { timeout: 8000 }).catch(() => null);
-      } catch (e) {}
-    }
-
-    if (shouldContinue) {
-      const hasHistory = await page.evaluate(() => {
-        const text = (document.body.innerText || '');
-        return text.includes('You said') || text.includes('Gemini said') || document.querySelectorAll('message-content, model-response, .model-response').length > 0;
-      });
-
-      if (!hasHistory) {
-        log('Conversation history not loaded directly. Attempting to resolve active conversation from Gemini sidebar...');
-        try {
-          if (page.url() !== 'https://gemini.google.com/app') {
-            await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.waitForTimeout(3000);
-          }
-
-          const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i]').first();
-          if (await openSidebarBtn.count() > 0) {
-            await openSidebarBtn.click({ force: true }).catch(() => {});
-            await page.waitForTimeout(2000);
-          }
-
-          const recentsToggle = page.locator('button[aria-label="Toggle Recents"]').first();
-          if (await recentsToggle.count() > 0) {
-            await recentsToggle.click({ force: true }).catch(() => {});
-            await page.waitForTimeout(1500);
-          }
-
-          const topHref = await page.evaluate(() => {
-            const links = document.querySelectorAll('a[href*="/app/"], a[href*="/spark/chat/"]');
-            for (const l of links) {
-              const h = l.getAttribute('href') || '';
-              if (h && !h.includes('download') && !h.includes('accounts.google.com') && h !== '/app') {
-                return h;
-              }
-            }
-            return null;
-          });
-
-          if (topHref) {
-            targetUrl = `https://gemini.google.com${topHref}`;
-            log(`[INFO] Continuing conversation from top recent chat: ${targetUrl}`);
-            await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-            await page.waitForTimeout(3000);
-          } else {
-            log('[WARN] No previous chats found in sidebar.');
-          }
-        } catch (sidebarErr) {
-          log('[WARN] Sidebar resolution failed:', sidebarErr.message);
+        const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
+        if (await openSidebarBtn.count() > 0) {
+          await openSidebarBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(1500);
         }
+
+        const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
+        if (await recentsToggle.count() > 0) {
+          await recentsToggle.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(1500);
+        }
+
+        const topHref = await page.evaluate(() => {
+          const links = document.querySelectorAll('a[href*="/app/"], a[href*="/spark/chat/"]');
+          for (const l of links) {
+            const h = l.getAttribute('href') || '';
+            if (h && !h.includes('download') && !h.includes('accounts.google.com') && h !== '/app' && h !== '/spark') {
+              return h;
+            }
+          }
+          return null;
+        });
+
+        if (topHref) {
+          targetUrl = `https://gemini.google.com${topHref}`;
+          log(`[INFO] Continuing top recent chat from sidebar: ${targetUrl}`);
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+        } else {
+          log('[WARN] No previous chats found in sidebar.');
+        }
+      } catch (sidebarErr) {
+        log('[WARN] Sidebar resolution failed:', sidebarErr.message);
       }
     }
     
     // Check if redirected to Google Login page
     const currentUrl = page.url();
     if (currentUrl.includes('accounts.google.com')) {
-      logError('PowerShell:');
-      logError(`  Start-Process "chrome" -ArgumentList "--remote-debugging-port=9222", "--user-data-dir=${USER_DATA_DIR}", "https://gemini.google.com"\n`);
-      logError('CMD:');
-      logError(`  start chrome --remote-debugging-port=9222 --user-data-dir="${USER_DATA_DIR}" https://gemini.google.com\n`);
+      logError('\n[ERROR] Google authentication is required.');
+      logError('To log in to your profile cleanly:');
+      logError('1. Close running Chrome processes:');
+      logError('   PowerShell: Stop-Process -Name chrome -Force -ErrorAction SilentlyContinue\n');
+      logError('2. Launch Chrome with your profile:');
+      logError(`  PowerShell: Start-Process "chrome" -ArgumentList "--remote-debugging-port=9222", "--user-data-dir=${USER_DATA_DIR}", "https://gemini.google.com/spark"\n`);
+      logError('  CMD: start chrome --remote-debugging-port=9222 --user-data-dir="' + USER_DATA_DIR + '" https://gemini.google.com/spark\n');
       if (isJsonOutput) outputJson({ status: "error", error: "Not logged in" });
       await context.close();
       process.exit(1);
@@ -470,6 +500,28 @@ async function run() {
     const textboxSelector = '[role="textbox"], div[contenteditable="true"]';
     await page.waitForSelector(textboxSelector, { timeout: 15000 });
     const textbox = page.locator(textboxSelector).first();
+    
+    // Check mode selector to ensure Spark mode is selected if available
+    try {
+      const modeBtn = page.locator('button[aria-label*="mode picker" i], button[aria-label*="Mod" i], button[aria-label*="mode" i]').first();
+      if (await modeBtn.count() > 0 && await modeBtn.isVisible()) {
+        const modeLabel = (await modeBtn.getAttribute('aria-label') || '').toLowerCase();
+        const modeText = (await modeBtn.innerText() || '').toLowerCase();
+        if (!modeLabel.includes('spark') && !modeText.includes('spark')) {
+          log('[INFO] Checking model picker for Spark mode...');
+          await modeBtn.click().catch(() => {});
+          await page.waitForTimeout(1000);
+          const sparkOption = page.locator('div[role="menuitem"]:has-text("Spark"), button:has-text("Spark"), a:has-text("Spark"), [role="option"]:has-text("Spark")').first();
+          if (await sparkOption.count() > 0 && await sparkOption.isVisible()) {
+            await sparkOption.click();
+            log('[OK] Spark mode selected from model picker.');
+            await page.waitForTimeout(1000);
+          } else {
+            await page.keyboard.press('Escape').catch(() => {});
+          }
+        }
+      }
+    } catch (modeErr) {}
     
     // Toggle Deep Research / Thinking Mode if --deep is requested
     if (isDeep) {
@@ -553,8 +605,8 @@ async function run() {
       await page.waitForTimeout(4000);
       let currentThreadUrl = page.url();
       if (currentThreadUrl.includes('/spark/chat/') || (currentThreadUrl.startsWith('https://gemini.google.com/app/') && currentThreadUrl !== 'https://gemini.google.com/app')) {
-        const lastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
-        fs.writeFileSync(lastChatFile, currentThreadUrl, 'utf8');
+        const profileLastChatFile = path.resolve(USER_DATA_DIR, 'last-chat-url.txt');
+        fs.writeFileSync(profileLastChatFile, currentThreadUrl, 'utf8');
       }
       const match = currentThreadUrl.match(/\/app\/([a-f0-9]+)/) || currentThreadUrl.match(/\/spark\/chat\/([a-f0-9]+)/);
       const threadId = match ? match[1] : null;
@@ -807,22 +859,19 @@ async function run() {
     
     // Wait for session synchronization and URL update
     log('Saving conversation state and syncing with Google servers...');
-    await page.waitForTimeout(6500);
+    await page.waitForTimeout(5000);
     let finalUrl = page.url();
-    if (finalUrl === 'https://gemini.google.com/app' || finalUrl === 'https://gemini.google.com/spark') {
-      try {
-        await page.waitForURL(url => {
-          const u = url.toString();
-          return (u.includes('/app/') && u !== 'https://gemini.google.com/app') || u.includes('/spark/chat/');
-        }, { timeout: 10000 }).catch(() => null);
-        finalUrl = page.url();
-      } catch (e) {}
+    let pollAttempts = 0;
+    while ((finalUrl === 'https://gemini.google.com/app' || finalUrl === 'https://gemini.google.com/spark') && pollAttempts < 5) {
+      await page.waitForTimeout(2000);
+      finalUrl = page.url();
+      pollAttempts++;
     }
     
     if (finalUrl.includes('/spark/chat/') || (finalUrl.startsWith('https://gemini.google.com/app/') && finalUrl !== 'https://gemini.google.com/app')) {
-      const lastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
-      fs.writeFileSync(lastChatFile, finalUrl, 'utf8');
-      log(`[INFO] Conversation saved: ${finalUrl}`);
+      const profileLastChatFile = path.resolve(USER_DATA_DIR, 'last-chat-url.txt');
+      fs.writeFileSync(profileLastChatFile, finalUrl, 'utf8');
+      log(`[INFO] Conversation saved to profile context: ${finalUrl}`);
     }
 
     const match = finalUrl.match(/\/app\/([a-f0-9]+)/) || finalUrl.match(/\/spark\/chat\/([a-f0-9]+)/);
