@@ -21,22 +21,32 @@ By default, **every query automatically continues the active Spark conversation*
 To interact with Gemini Spark, run the script:
 
 ```bash
-node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login|delete] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
+node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login|delete|verbatim] [--verbatim] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
 ```
 
 ### Architectural Features & Options
 *   **Structured JSON Output (`--json`)**: Emits clean machine-readable JSON payload containing `status`, `thread_id`, `url`, `response`, and `downloaded_files`.
+*   **Verbatim Response Copy (`--verbatim` or `-v` or `verbatim`)**: Specifies that the response must be returned as an exact, untruncated verbatim copy of Gemini Spark's answer. When absent, the calling agent may synthesize or summarize the response.
 *   **Profile Isolation (`--profile <name>`)**: Launches an isolated Chrome user-data profile (`chrome-profile-<name>`), preventing file-lock collisions when running parallel AGY agents. Each profile maintains its own isolated conversation memory.
 *   **Async Dispatch (`--no-wait`)**: Submits prompt, captures thread ID immediately, and exits returning `{"status": "pending"}` without waiting for full text generation.
 *   **Wait Subcommand (`wait [thread_id]`)**: Polls and waits for thread text generation to complete, returning `{"status": "completed", "response": "..."}`.
 *   **Login Subcommand (`login` or `--login`)**: Checks session login state and outputs exact commands to open Chrome with profile debugging for authentication.
-*   **Delete Subcommand (`delete [active|all|<id_or_index>]`)**: Clears local session context or deletes a conversation thread directly from Gemini servers.
+*   **Delete Subcommand (`delete [active|all|<id_1>,<id_2>...]`)**: Deletes one or multiple conversation threads / Spark tasks from Gemini and automatically returns the updated remaining tasks list.
 
 ### Examples
 *   **Default Multi-Turn Query (Continues Active Conversation):**
     ```bash
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js "What is the capital of France?"
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js "What is its population?"  # Automatically continues previous context!
+    ```
+*   **Verbatim Exact Response Copy:**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js verbatim "Write a 50-word summary of quantum mechanics."
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js --verbatim --json "Write a Python function for quicksort."
+    ```
+*   **Delete Multiple Threads & Auto-List Remaining:**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js delete fb6b127394a556fd, dc2661effcee1f7b, 8f165d09e48a0a2b
     ```
 *   **Session Login Verification:**
     ```bash

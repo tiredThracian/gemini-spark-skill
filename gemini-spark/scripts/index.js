@@ -57,9 +57,9 @@ async function run() {
     args.splice(noWaitIndex, 1);
   }
 
-  // Parse subcommands: wait, list, ask, login, delete, rm
+  // Parse subcommands: wait, list, ask, login, delete, rm, verbatim
   let subcommand = null;
-  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove'].includes(args[0].toLowerCase())) {
+  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove', 'verbatim'].includes(args[0].toLowerCase())) {
     subcommand = args.shift().toLowerCase();
   }
 
@@ -69,6 +69,14 @@ async function run() {
   if (loginIndex !== -1) {
     isLoginSubcommand = true;
     args.splice(loginIndex, 1);
+  }
+
+  // Parse --verbatim flag or verbatim subcommand
+  let isVerbatim = subcommand === 'verbatim';
+  const verbatimIndex = args.findIndex(arg => arg === '--verbatim' || arg === '-v');
+  if (verbatimIndex !== -1) {
+    isVerbatim = true;
+    args.splice(verbatimIndex, 1);
   }
 
   // Parse delete subcommand
@@ -152,7 +160,7 @@ async function run() {
   const prompt = args.join(' ');
   
   if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !isDeleteSubcommand && !prompt && !filePath) {
-    log('Usage: node index.js [ask|wait|list|login|delete] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
+    log('Usage: node index.js [ask|wait|list|login|delete|verbatim] [--verbatim] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
     if (isJsonOutput) {
       outputJson({ status: "error", error: "Missing required prompt, file, or subcommand" });
     }
@@ -345,7 +353,7 @@ async function run() {
       }
     }
 
-    // 3. Delete subcommand
+    // 3. Delete subcommand with multi-ID support and automatic post-delete listing
     if (isDeleteSubcommand) {
       log('Running delete subcommand...');
       const profileLastChatFile = path.resolve(USER_DATA_DIR, 'last-chat-url.txt');
@@ -375,109 +383,184 @@ async function run() {
         process.exit(0);
       }
 
-      // Deleting specific conversation by ID or index from Google web UI
-      let chatId = deleteTarget;
-      const targetIndex = parseInt(deleteTarget, 10);
+      // Collect all target tokens (support comma-separated or space-separated multiple IDs/indices)
+      const rawTargetsString = [deleteTarget, ...args].join(' ');
+      const rawTargetTokens = rawTargetsString.split(/[\s,]+/).filter(Boolean);
+
       const cacheFile = fs.existsSync(profileCacheFile) ? profileCacheFile : legacyCacheFile;
-      if (!isNaN(targetIndex) && fs.existsSync(cacheFile)) {
-        const chats = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
-        if (targetIndex >= 1 && targetIndex <= chats.length) {
-          chatId = chats[targetIndex - 1].id;
-          log(`Index ${targetIndex} resolved to Chat ID: ${chatId}`);
+      const cachedChats = fs.existsSync(cacheFile) ? JSON.parse(fs.readFileSync(cacheFile, 'utf8')) : [];
+
+      const targetIds = [];
+      for (const token of rawTargetTokens) {
+        const targetIndex = parseInt(token, 10);
+        if (!isNaN(targetIndex) && targetIndex >= 1 && targetIndex <= cachedChats.length) {
+          targetIds.push(cachedChats[targetIndex - 1].id);
+        } else {
+          targetIds.push(token);
         }
       }
 
-      log(`Deleting task/conversation ID ${chatId} from Gemini...`);
+      log(`Deleting ${targetIds.length} task/conversation item(s) from Gemini: ${targetIds.join(', ')}...`);
+      const deletedIds = [];
+
       try {
-        let deleted = false;
+        for (const chatId of targetIds) {
+          let deleted = false;
 
-        // Step A: Check Spark tasks page (https://gemini.google.com/spark/tasks) for goal cards
-        try {
-          await page.goto('https://gemini.google.com/spark/tasks', { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(3000);
+          // Step A: Check Spark tasks page (https://gemini.google.com/spark/tasks) for goal cards
+          try {
+            await page.goto('https://gemini.google.com/spark/tasks', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(2500);
 
-          const goalCardSelector = `div#goal-c_${chatId}, div.goal-card[id*="${chatId}"]`;
-          const goalCard = page.locator(goalCardSelector).first();
-          if (await goalCard.count() > 0) {
-            log(`Found Spark task goal card for ID: ${chatId}. Deleting...`);
-            await goalCard.hover().catch(() => {});
-            await page.waitForTimeout(500);
+            const goalCardSelector = `div#goal-c_${chatId}, div.goal-card[id*="${chatId}"]`;
+            const goalCard = page.locator(goalCardSelector).first();
+            if (await goalCard.count() > 0) {
+              log(`Found Spark task goal card for ID: ${chatId}. Deleting...`);
+              await goalCard.hover().catch(() => {});
+              await page.waitForTimeout(500);
 
-            const optionsBtn = goalCard.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i], button[aria-label*="menu" i], button[aria-label*="menü" i]').first();
-            if (await optionsBtn.count() > 0) {
-              await optionsBtn.click({ force: true });
-              await page.waitForTimeout(1000);
-              const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil"), [role="option"]:has-text("Sil"), [role="option"]:has-text("Delete")').first();
-              if (await deleteMenuItem.count() > 0) {
-                await deleteMenuItem.click({ force: true });
+              const optionsBtn = goalCard.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i], button[aria-label*="menu" i], button[aria-label*="menü" i]').first();
+              if (await optionsBtn.count() > 0) {
+                await optionsBtn.click({ force: true });
                 await page.waitForTimeout(1000);
-                const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
-                if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
-                  await confirmBtn.click({ force: true });
-                  await page.waitForTimeout(1500);
+                const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil"), [role="option"]:has-text("Sil"), [role="option"]:has-text("Delete")').first();
+                if (await deleteMenuItem.count() > 0) {
+                  await deleteMenuItem.click({ force: true });
+                  await page.waitForTimeout(1000);
+                  const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
+                  if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
+                    await confirmBtn.click({ force: true });
+                    await page.waitForTimeout(1500);
+                  }
+                  log(`[OK] Spark task card ${chatId} deleted successfully.`);
+                  deleted = true;
+                  deletedIds.push(chatId);
                 }
-                log(`[OK] Spark task card ${chatId} deleted successfully.`);
-                deleted = true;
               }
             }
-          }
-        } catch (sparkTasksErr) {
-          log('[WARN] Spark tasks page check failed:', sparkTasksErr.message);
-        }
-
-        // Step B: If not deleted on Spark tasks page, check Gemini sidebar chats
-        if (!deleted) {
-          log('Checking main Gemini sidebar for conversation thread...');
-          await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
-          await page.waitForTimeout(3000);
-
-          const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
-          if (await openSidebarBtn.count() > 0) {
-            await openSidebarBtn.click({ force: true }).catch(() => {});
-            await page.waitForTimeout(2000);
+          } catch (sparkTasksErr) {
+            log('[WARN] Spark tasks page check failed:', sparkTasksErr.message);
           }
 
-          const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
-          if (await recentsToggle.count() > 0) {
-            await recentsToggle.click({ force: true }).catch(() => {});
-            await page.waitForTimeout(1500);
-          }
+          // Step B: If not deleted on Spark tasks page, check Gemini sidebar chats
+          if (!deleted) {
+            log(`Checking main Gemini sidebar for conversation thread ${chatId}...`);
+            await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(2500);
 
-          const chatLinkSelector = `a[href*="${chatId}"]`;
-          const chatLink = page.locator(chatLinkSelector).first();
-          if (await chatLink.count() > 0) {
-            await chatLink.hover().catch(() => {});
-            await page.waitForTimeout(500);
-            
-            const parentItem = chatLink.locator('xpath=..');
-            const optionsBtn = parentItem.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
-            if (await optionsBtn.count() > 0) {
-              await optionsBtn.click({ force: true });
-              await page.waitForTimeout(1000);
-              const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil")').first();
-              if (await deleteMenuItem.count() > 0) {
-                await deleteMenuItem.click({ force: true });
-                await page.waitForTimeout(1000);
-                const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
-                if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
-                  await confirmBtn.click({ force: true });
-                  await page.waitForTimeout(1500);
-                }
-                log(`[OK] Conversation ${chatId} deleted from Gemini sidebar.`);
-                deleted = true;
-              }
+            const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
+            if (await openSidebarBtn.count() > 0) {
+              await openSidebarBtn.click({ force: true }).catch(() => {});
+              await page.waitForTimeout(1500);
             }
-          } else {
-            log(`[WARN] Chat ID ${chatId} not found in sidebar list.`);
+
+            const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
+            if (await recentsToggle.count() > 0) {
+              await recentsToggle.click({ force: true }).catch(() => {});
+              await page.waitForTimeout(1500);
+            }
+
+            const chatLinkSelector = `a[href*="${chatId}"]`;
+            const chatLink = page.locator(chatLinkSelector).first();
+            if (await chatLink.count() > 0) {
+              await chatLink.hover().catch(() => {});
+              await page.waitForTimeout(500);
+              
+              const parentItem = chatLink.locator('xpath=..');
+              const optionsBtn = parentItem.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
+              if (await optionsBtn.count() > 0) {
+                await optionsBtn.click({ force: true });
+                await page.waitForTimeout(1000);
+                const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil")').first();
+                if (await deleteMenuItem.count() > 0) {
+                  await deleteMenuItem.click({ force: true });
+                  await page.waitForTimeout(1000);
+                  const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
+                  if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
+                    await confirmBtn.click({ force: true });
+                    await page.waitForTimeout(1500);
+                  }
+                  log(`[OK] Conversation ${chatId} deleted from Gemini sidebar.`);
+                  deleted = true;
+                  deletedIds.push(chatId);
+                }
+              }
+            } else {
+              log(`[WARN] Chat ID ${chatId} not found in sidebar list.`);
+            }
+          }
+
+          if (fs.existsSync(profileLastChatFile)) {
+            const savedUrl = fs.readFileSync(profileLastChatFile, 'utf8').trim();
+            if (savedUrl.includes(chatId)) fs.unlinkSync(profileLastChatFile);
           }
         }
 
-        if (fs.existsSync(profileLastChatFile)) {
-          const savedUrl = fs.readFileSync(profileLastChatFile, 'utf8').trim();
-          if (savedUrl.includes(chatId)) fs.unlinkSync(profileLastChatFile);
+        // Automatic post-delete list update
+        log('Fetching updated remaining task list...');
+        await page.goto('https://gemini.google.com/spark/tasks', { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+        await page.waitForTimeout(3000);
+
+        let remainingChats = await page.evaluate(() => {
+          const cards = Array.from(document.querySelectorAll('div.goal-card'));
+          return cards.map(card => {
+            const idAttr = card.getAttribute('id') || '';
+            const match = idAttr.match(/^goal-c_([a-f0-9]+)$/);
+            const titleEl = card.querySelector('.goal-description');
+            const isScheduled = !!card.querySelector('.scheduled-icon') || !!card.querySelector('[fonticonname="schedule"]');
+            return {
+              id: match ? match[1] : null,
+              title: titleEl ? (titleEl.innerText || '').trim() : 'Görev',
+              isScheduled
+            };
+          }).filter(c => c.id);
+        });
+
+        if (remainingChats.length === 0) {
+          try {
+            await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+            await page.waitForTimeout(2500);
+            const openSidebarBtn = page.locator('button[aria-label*="sidebar" i], button[aria-label*="menu" i]').first();
+            if (await openSidebarBtn.count() > 0) {
+              await openSidebarBtn.click({ force: true }).catch(() => {});
+              await page.waitForTimeout(1500);
+            }
+            const recentChats = await page.evaluate(() => {
+              const links = document.querySelectorAll('a[href*="/app/"], a[href*="/spark/chat/"]');
+              const results = [];
+              links.forEach(l => {
+                const href = l.getAttribute('href') || '';
+                if (href && !href.includes('download') && !href.includes('accounts.google.com') && href !== '/app') {
+                  const match = href.match(/\/app\/([a-f0-9]+)/) || href.match(/\/spark\/chat\/([a-f0-9]+)/);
+                  const id = match ? match[1] : href;
+                  const title = (l.innerText || '').trim() || 'Sohbet';
+                  results.push({ id, title, isScheduled: false });
+                }
+              });
+              return results;
+            });
+            if (recentChats.length > 0) remainingChats = recentChats;
+          } catch (e) {}
         }
 
-        if (isJsonOutput) outputJson({ status: "ok", deleted_id: chatId });
+        fs.writeFileSync(profileCacheFile, JSON.stringify(remainingChats, null, 2), 'utf8');
+
+        if (isJsonOutput) {
+          outputJson({
+            status: "ok",
+            deleted_ids: deletedIds,
+            count: remainingChats.length,
+            chats: remainingChats
+          });
+        } else {
+          log(`\n[OK] Deleted ${deletedIds.length} item(s): ${deletedIds.join(', ')}`);
+          log('\n--- REMAINING GEMINI SPARK TASKS ---');
+          remainingChats.forEach((chat, idx) => {
+            const scheduledLabel = chat.isScheduled ? ' ⏱️ [Zamanlanmış]' : '';
+            log(`[${idx + 1}] ${chat.title} (ID: ${chat.id})${scheduledLabel}`);
+          });
+          log('------------------------------------\n');
+        }
       } catch (delErr) {
         logError('Error during thread deletion:', delErr.message);
         if (isJsonOutput) outputJson({ status: "error", error: delErr.message });
@@ -1031,6 +1114,7 @@ async function run() {
         status: "ok",
         thread_id: threadId,
         url: finalUrl,
+        verbatim: isVerbatim,
         response: responseText,
         downloaded_files: downloadedFiles
       });
