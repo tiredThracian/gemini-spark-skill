@@ -387,48 +387,89 @@ async function run() {
         }
       }
 
-      log(`Deleting conversation ID ${chatId} from Gemini...`);
+      log(`Deleting task/conversation ID ${chatId} from Gemini...`);
       try {
-        await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await page.waitForTimeout(3000);
+        let deleted = false;
 
-        const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
-        if (await openSidebarBtn.count() > 0) {
-          await openSidebarBtn.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(2000);
-        }
+        // Step A: Check Spark tasks page (https://gemini.google.com/spark/tasks) for goal cards
+        try {
+          await page.goto('https://gemini.google.com/spark/tasks', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
 
-        const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
-        if (await recentsToggle.count() > 0) {
-          await recentsToggle.click({ force: true }).catch(() => {});
-          await page.waitForTimeout(1500);
-        }
+          const goalCardSelector = `div#goal-c_${chatId}, div.goal-card[id*="${chatId}"]`;
+          const goalCard = page.locator(goalCardSelector).first();
+          if (await goalCard.count() > 0) {
+            log(`Found Spark task goal card for ID: ${chatId}. Deleting...`);
+            await goalCard.hover().catch(() => {});
+            await page.waitForTimeout(500);
 
-        const chatLinkSelector = `a[href*="${chatId}"]`;
-        const chatLink = page.locator(chatLinkSelector).first();
-        if (await chatLink.count() > 0) {
-          await chatLink.hover().catch(() => {});
-          await page.waitForTimeout(500);
-          
-          const parentItem = chatLink.locator('xpath=..');
-          const optionsBtn = parentItem.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
-          if (await optionsBtn.count() > 0) {
-            await optionsBtn.click({ force: true });
-            await page.waitForTimeout(1000);
-            const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil")').first();
-            if (await deleteMenuItem.count() > 0) {
-              await deleteMenuItem.click({ force: true });
+            const optionsBtn = goalCard.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i], button[aria-label*="menu" i], button[aria-label*="menü" i]').first();
+            if (await optionsBtn.count() > 0) {
+              await optionsBtn.click({ force: true });
               await page.waitForTimeout(1000);
-              const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
-              if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
-                await confirmBtn.click({ force: true });
-                await page.waitForTimeout(1500);
+              const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil"), [role="option"]:has-text("Sil"), [role="option"]:has-text("Delete")').first();
+              if (await deleteMenuItem.count() > 0) {
+                await deleteMenuItem.click({ force: true });
+                await page.waitForTimeout(1000);
+                const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
+                if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
+                  await confirmBtn.click({ force: true });
+                  await page.waitForTimeout(1500);
+                }
+                log(`[OK] Spark task card ${chatId} deleted successfully.`);
+                deleted = true;
               }
-              log(`[OK] Conversation ${chatId} deleted from Gemini.`);
             }
           }
-        } else {
-          log(`[WARN] Chat ID ${chatId} not found in sidebar list.`);
+        } catch (sparkTasksErr) {
+          log('[WARN] Spark tasks page check failed:', sparkTasksErr.message);
+        }
+
+        // Step B: If not deleted on Spark tasks page, check Gemini sidebar chats
+        if (!deleted) {
+          log('Checking main Gemini sidebar for conversation thread...');
+          await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await page.waitForTimeout(3000);
+
+          const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
+          if (await openSidebarBtn.count() > 0) {
+            await openSidebarBtn.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(2000);
+          }
+
+          const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
+          if (await recentsToggle.count() > 0) {
+            await recentsToggle.click({ force: true }).catch(() => {});
+            await page.waitForTimeout(1500);
+          }
+
+          const chatLinkSelector = `a[href*="${chatId}"]`;
+          const chatLink = page.locator(chatLinkSelector).first();
+          if (await chatLink.count() > 0) {
+            await chatLink.hover().catch(() => {});
+            await page.waitForTimeout(500);
+            
+            const parentItem = chatLink.locator('xpath=..');
+            const optionsBtn = parentItem.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
+            if (await optionsBtn.count() > 0) {
+              await optionsBtn.click({ force: true });
+              await page.waitForTimeout(1000);
+              const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil")').first();
+              if (await deleteMenuItem.count() > 0) {
+                await deleteMenuItem.click({ force: true });
+                await page.waitForTimeout(1000);
+                const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
+                if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
+                  await confirmBtn.click({ force: true });
+                  await page.waitForTimeout(1500);
+                }
+                log(`[OK] Conversation ${chatId} deleted from Gemini sidebar.`);
+                deleted = true;
+              }
+            }
+          } else {
+            log(`[WARN] Chat ID ${chatId} not found in sidebar list.`);
+          }
         }
 
         if (fs.existsSync(profileLastChatFile)) {
