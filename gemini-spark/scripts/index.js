@@ -57,9 +57,9 @@ async function run() {
     args.splice(noWaitIndex, 1);
   }
 
-  // Parse subcommands: wait, list, ask, login
+  // Parse subcommands: wait, list, ask, login, delete, rm
   let subcommand = null;
-  if (args.length > 0 && ['wait', 'list', 'ask', 'login'].includes(args[0].toLowerCase())) {
+  if (args.length > 0 && ['wait', 'list', 'ask', 'login', 'delete', 'rm', 'remove'].includes(args[0].toLowerCase())) {
     subcommand = args.shift().toLowerCase();
   }
 
@@ -69,6 +69,13 @@ async function run() {
   if (loginIndex !== -1) {
     isLoginSubcommand = true;
     args.splice(loginIndex, 1);
+  }
+
+  // Parse delete subcommand
+  let isDeleteSubcommand = ['delete', 'rm', 'remove'].includes(subcommand);
+  let deleteTarget = null;
+  if (isDeleteSubcommand && args.length > 0 && !args[0].startsWith('-')) {
+    deleteTarget = args.shift();
   }
 
   // Parse --file or -f
@@ -144,8 +151,8 @@ async function run() {
   
   const prompt = args.join(' ');
   
-  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !prompt && !filePath) {
-    log('Usage: node index.js [ask|wait|list|login] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
+  if (!shouldList && !isWaitSubcommand && !isLoginSubcommand && !isDeleteSubcommand && !prompt && !filePath) {
+    log('Usage: node index.js [ask|wait|list|login|delete] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file path/to/file] "your prompt here"');
     if (isJsonOutput) {
       outputJson({ status: "error", error: "Missing required prompt, file, or subcommand" });
     }
@@ -334,6 +341,107 @@ async function run() {
         log(`[OK] Session is active and authenticated for profile: ${USER_DATA_DIR}`);
         if (isJsonOutput) outputJson({ status: "ok", message: "Authenticated", user_data_dir: USER_DATA_DIR });
         await context.close();
+        process.exit(0);
+      }
+    }
+
+    // 3. Delete subcommand
+    if (isDeleteSubcommand) {
+      log('Running delete subcommand...');
+      const profileLastChatFile = path.resolve(USER_DATA_DIR, 'last-chat-url.txt');
+      const legacyLastChatFile = path.resolve(__dirname, '../last-chat-url.txt');
+      const profileCacheFile = path.resolve(USER_DATA_DIR, 'last-chat-list.json');
+      const legacyCacheFile = path.resolve(__dirname, '../last-chat-list.json');
+
+      if (!deleteTarget || deleteTarget === 'active' || deleteTarget === 'current') {
+        log('Clearing active local conversation state...');
+        if (fs.existsSync(profileLastChatFile)) fs.unlinkSync(profileLastChatFile);
+        if (fs.existsSync(legacyLastChatFile)) fs.unlinkSync(legacyLastChatFile);
+        if (isJsonOutput) outputJson({ status: "ok", message: "Active local conversation state cleared." });
+        else log('[OK] Active local conversation state cleared. Next query will start fresh.');
+        await context.close().catch(() => {});
+        process.exit(0);
+      }
+
+      if (deleteTarget === 'all') {
+        log('Clearing all local session memory...');
+        if (fs.existsSync(profileLastChatFile)) fs.unlinkSync(profileLastChatFile);
+        if (fs.existsSync(legacyLastChatFile)) fs.unlinkSync(legacyLastChatFile);
+        if (fs.existsSync(profileCacheFile)) fs.unlinkSync(profileCacheFile);
+        if (fs.existsSync(legacyCacheFile)) fs.unlinkSync(legacyCacheFile);
+        if (isJsonOutput) outputJson({ status: "ok", message: "All local session memory cleared." });
+        else log('[OK] All local session memory cleared.');
+        await context.close().catch(() => {});
+        process.exit(0);
+      }
+
+      // Deleting specific conversation by ID or index from Google web UI
+      let chatId = deleteTarget;
+      const targetIndex = parseInt(deleteTarget, 10);
+      const cacheFile = fs.existsSync(profileCacheFile) ? profileCacheFile : legacyCacheFile;
+      if (!isNaN(targetIndex) && fs.existsSync(cacheFile)) {
+        const chats = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        if (targetIndex >= 1 && targetIndex <= chats.length) {
+          chatId = chats[targetIndex - 1].id;
+          log(`Index ${targetIndex} resolved to Chat ID: ${chatId}`);
+        }
+      }
+
+      log(`Deleting conversation ID ${chatId} from Gemini...`);
+      try {
+        await page.goto('https://gemini.google.com/app', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.waitForTimeout(3000);
+
+        const openSidebarBtn = page.locator('button[aria-label="Open sidebar"], button[aria-label*="Menü" i], button[aria-label*="sidebar" i]').first();
+        if (await openSidebarBtn.count() > 0) {
+          await openSidebarBtn.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(2000);
+        }
+
+        const recentsToggle = page.locator('button[aria-label="Toggle Recents"], button[aria-label*="Recents" i]').first();
+        if (await recentsToggle.count() > 0) {
+          await recentsToggle.click({ force: true }).catch(() => {});
+          await page.waitForTimeout(1500);
+        }
+
+        const chatLinkSelector = `a[href*="${chatId}"]`;
+        const chatLink = page.locator(chatLinkSelector).first();
+        if (await chatLink.count() > 0) {
+          await chatLink.hover().catch(() => {});
+          await page.waitForTimeout(500);
+          
+          const parentItem = chatLink.locator('xpath=..');
+          const optionsBtn = parentItem.locator('button[aria-label*="options" i], button[aria-label*="seçenek" i], button[aria-label*="More" i], button[aria-label*="Daha" i]').first();
+          if (await optionsBtn.count() > 0) {
+            await optionsBtn.click({ force: true });
+            await page.waitForTimeout(1000);
+            const deleteMenuItem = page.locator('div[role="menuitem"]:has-text("Sil"), div[role="menuitem"]:has-text("Delete"), button:has-text("Delete"), button:has-text("Sil")').first();
+            if (await deleteMenuItem.count() > 0) {
+              await deleteMenuItem.click({ force: true });
+              await page.waitForTimeout(1000);
+              const confirmBtn = page.locator('button:has-text("Sil"), button:has-text("Delete"), button:has-text("Confirm")').first();
+              if (await confirmBtn.count() > 0 && await confirmBtn.isVisible()) {
+                await confirmBtn.click({ force: true });
+                await page.waitForTimeout(1500);
+              }
+              log(`[OK] Conversation ${chatId} deleted from Gemini.`);
+            }
+          }
+        } else {
+          log(`[WARN] Chat ID ${chatId} not found in sidebar list.`);
+        }
+
+        if (fs.existsSync(profileLastChatFile)) {
+          const savedUrl = fs.readFileSync(profileLastChatFile, 'utf8').trim();
+          if (savedUrl.includes(chatId)) fs.unlinkSync(profileLastChatFile);
+        }
+
+        if (isJsonOutput) outputJson({ status: "ok", deleted_id: chatId });
+      } catch (delErr) {
+        logError('Error during thread deletion:', delErr.message);
+        if (isJsonOutput) outputJson({ status: "error", error: delErr.message });
+      } finally {
+        await context.close().catch(() => {});
         process.exit(0);
       }
     }

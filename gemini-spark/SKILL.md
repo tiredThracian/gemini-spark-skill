@@ -21,7 +21,7 @@ By default, **every query automatically continues the active Spark conversation*
 To interact with Gemini Spark, run the script:
 
 ```bash
-node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
+node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wait|list|login|delete] [--new] [--continue <index_or_id>] [--profile <name>] [--no-wait] [--json] [--file "path/to/file"] "Your query here"
 ```
 
 ### Architectural Features & Options
@@ -30,6 +30,7 @@ node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wai
 *   **Async Dispatch (`--no-wait`)**: Submits prompt, captures thread ID immediately, and exits returning `{"status": "pending"}` without waiting for full text generation.
 *   **Wait Subcommand (`wait [thread_id]`)**: Polls and waits for thread text generation to complete, returning `{"status": "completed", "response": "..."}`.
 *   **Login Subcommand (`login` or `--login`)**: Checks session login state and outputs exact commands to open Chrome with profile debugging for authentication.
+*   **Delete Subcommand (`delete [active|all|<id_or_index>]`)**: Clears local session context or deletes a conversation thread directly from Gemini servers.
 
 ### Examples
 *   **Default Multi-Turn Query (Continues Active Conversation):**
@@ -40,6 +41,11 @@ node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js [ask|wai
 *   **Session Login Verification:**
     ```bash
     node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js login
+    ```
+*   **Clear Active Conversation Memory / Delete Thread:**
+    ```bash
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js delete active     # Clears local session state for next query
+    node C:\Users\ibrah\.gemini\config\skills\gemini-spark\scripts\index.js delete 3bef48082feba09d  # Deletes thread from Gemini web UI
     ```
 *   **Structured JSON API Mode:**
     ```bash
