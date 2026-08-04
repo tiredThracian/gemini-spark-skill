@@ -1,41 +1,51 @@
-# Geliştirme Raporu: Gemini Spark Yeteneği
+# 📊 Geliştirme Raporu: Gemini Spark Yeteneği
 
-Bu rapor, Google Antigravity için tasarlanan Gemini Spark tarayıcı otomasyonu skill projesinde yapılan tüm yapısal dönüşümleri, hata düzeltmelerini ve özellikleri detaylandırmaktadır.
+Bu rapor, Google Antigravity için tasarlanan **Gemini Spark** tarayıcı otomasyonu skill projesinde gerçekleştirilen tüm mimari dönüşümleri, yeni özellikleri ve kararlılık geliştirmelerini detaylandırmaktadır.
 
 ---
 
 ## 1. Mimari Yapı: Odaklanmış Gemini Spark Otomasyonu
-Kullanıcı talebi doğrultusunda yan skill'ler (`gemini-deep-research` ve `gemini-image-gen`) sistemden kaldırılmış, proje sadece **Gemini Spark** görevlerine ve otomasyonuna odaklanacak şekilde sadeleştirilmiştir:
-*   **Klasör Yapısı:** Proje doğrudan `gemini-spark` çekirdek otomasyon motorunu barındırmaktadır.
-*   **Doğrudan Spark Yönlendirmesi:** Sistem varsayılan olarak `https://gemini.google.com/spark` ve `https://gemini.google.com/spark/tasks` adreslerini kullanarak doğrudan Spark tabı üzerinde işlem yapar.
-*   **Tekli Yükleyici (setup.bat):** Proje kök dizininde `gemini-spark` yeteneğini Antigravity profil dizinine (`.gemini/config/skills/gemini-spark`) kuran, bağımlılıkları yükleyen ve ilk Google oturumunu açan sadeleştirilmiş `setup.bat` aracı bulunmaktadır.
+*   **Doğrudan Spark Yönlendirmesi:** Sistem varsayılan olarak `https://gemini.google.com/spark` ve `https://gemini.google.com/spark/tasks` adreslerini kullanarak doğrudan Spark modeli üzerinde işlem yapar.
+*   **Tekli Yükleyici (setup.bat):** Proje kök dizinindeki `setup.bat` aracı, `gemini-spark` yeteneğini Antigravity profil dizinine (`.gemini/config/skills/gemini-spark`) kurar, bağımlılıkları yükler ve ilk Google oturumunu açar.
 
 ---
 
-## 2. Google Workspace Otomatik İndirici Geliştirmeleri (Docs, Sheets, Slides)
-Sohbet sonunda üretilen Google belgelerini yerel sisteme çekme altyapısı:
-*   **Link Ayrıştırma İyileştirmesi:** Model yanıtı içerisindeki HTML link etiketlerinin (`a[href]`) öznitelikleri doğrudan taranarak bağlantılar yakalanır.
+## 2. Çoklu Hesap & Profil Yönetimi (`--account` / `accounts`)
+*   **Birincil Hesap Desteği (`--account <name>` / `-a`):** Farklı Google hesapları (örn. `work`, `personal`, `research`) arasında geçiş yapılmasını sağlar.
+*   **İzole Profil Hafızası:** Her hesap kendi tarayıcı çerezlerini, oturum jetonlarını ve aktif sohbet hafızasını (`last-chat-url.txt` ve `last-chat-list.json`) bağımsız olarak korur.
+*   **Hesap Listeleme Subcommand (`accounts` / `profiles`):** Yapılandırılmış tüm hesap profillerini ve aktif oturum durumlarını anında tarayıp listeler.
+
+---
+
+## 3. CDP Paralel Çalıştırma Modu (`--cdp`)
+*   **Aynı Hesapta Paralel Sekme Desteği:** Chrome DevTools Protocol (`--cdp 9222`) bağlantısı sayesinde birden fazla Playwright betiğinin **aynı Google hesabında aynı anda paralel sekmeler açarak** çalışmasını sağlar. Profil kilitleme (file-lock) çakışmaları tamamen önlenir.
+
+---
+
+## 4. Birebir (Verbatim) Yanıt Modu (`verbatim` / `--verbatim`)
+*   **Tam Yanıt Aktarımı:** Modele `--verbatim` bayrağı veya `verbatim` komut modifikatörü verildiğinde, yanıtın özetlenmeden veya değiştirilmeden ham haliyle aktarılacağını belirten `"verbatim": true` özniteliği JSON çıktısına eklenir.
+
+---
+
+## 5. Başlık Yeniden Adlandırma (`rename`)
+*   **Sohbet ve Görev Kartı Adlandırma:** `rename [id_veya_indeks] "Yeni Başlık"` komutu ile Gemini yan panelindeki sohbet başlıkları veya Spark görev kartları web arayüzü üzerinden otomatik olarak yeniden adlandırılır.
+
+---
+
+## 6. Toplu Silme ve Otomatik Listeleme (`delete`)
+*   **Çoklu ID Silme:** `delete id1, id2, id3` formatı ile birden fazla sohbet veya görev kartı tek geçişte silinir.
+*   **Otomatik Güncel Liste Çıktısı:** Silme işlemi tamamlandıktan hemen sonra güncel kalan görev listesi otomatik olarak taranır ve JSON/konsol çıktısında sunulur.
+
+---
+
+## 7. Google Workspace Otomatik İndirici (Docs, Sheets, Slides)
 *   **Çoklu Format Desteği:**
-    *   **Google Docs:** Plain Text (.txt) formatında indirilir.
+    *   **Google Docs:** Plain Text (.txt) formatında dışa aktarılır.
     *   **Google Sheets:** Excel (.xlsx) formatında dışa aktarılır.
     *   **Google Slides:** PowerPoint (.pptx) formatında dışa aktarılır.
-*   **Aktif Dizin Kopyalama:** İndirilen dosyalar, komutun çalıştırıldığı aktif dizine (`process.cwd()`) kopyalanır.
+*   **Aktif Dizin Kopyalama:** İndirilen dosyalar ve üretilen görseller doğrudan komutun çalıştırıldığı aktif dizine (`process.cwd()`) aktarılır.
 
 ---
 
-## 3. Doğrudan Yükleme Kuralları ve Dosya Tipleri (Native Upload Rules)
-*   **Metin Ayıklama Kısıtlaması (No Local Extraction):** Google Workspace ve Gemini'ın yerel olarak desteklediği zengin dosya tiplerinde (PDF, Word, Excel, PowerPoint, Görsel, Ses/Video ve Kod dosyaları) verileri yerelde çıkarıp prompt içerisine metin olarak ekleme mantığı devre dışı bırakılmıştır. Dosyaların doğrudan arayüze yüklenmesi (`--file`) kural olarak belirlenmiştir.
-
----
-
-## 4. Kararlılık ve Hata Düzeltmeleri
-*   **Sohbete Devam Etme (Continue) Çakışması:** `--continue` bayrağının ardından gelen sorgu metinlerinin sohbet ID'si veya indeksiyle çakışması, katı regex kontrolleri (`/^\d+$/` ve `/^[a-f0-9]{16}$/`) eklenerek çözülmüştür.
-*   **Eski Mesajların Sayılması:** Sohbet devam ettirildiğinde sayfada zaten var olan eski yanıt elemanları nedeniyle sistemin kararlılık döngüsünden erken çıkması engellenmiştir. Gönderim öncesinde sayfadaki aktif elemanların sayısı çıkarılarak, sadece yeni eklenen yanıt elemanının stabilliği izlenir.
-
----
-
-## 5. Çoklu Bağlam (Multi-Turn) ve Profil Senkronizasyonu
-*   **Varsayılan Bağlam Koruma:** Sorgular varsayılan olarak aktif sohbet oturumunu sürdürür (`last-chat-url.txt`). `--new` / `-n` bayrağı ile açıkça yeni sohbet başlatılabilir.
-*   **Birleşik Profil Yolu (Global Profile):** Hem yerel depo hem de Antigravity yetenek dizini (`.gemini/config/skills/gemini-spark/chrome-profile`) aynı kimlik doğrulanmış Chrome profilini paylaşacak şekilde yapılandırılmıştır.
-*   **Gerçek Klavye Basışları:** Angular/Quill zengin metin editörlerinde `.fill()` yerine gerçek OS seviyesinde klavye basışları (`keyboard.type`) kullanılarak olay dinleyicilerinin tetiklenmesi sağlanmıştır.
-*   **Bulut Senkronizasyon ve LevelDB Gecikmesi:** Görev bitiminde Google'ın `batchexecute` arka plan servislerinin ve LevelDB verilerinin disk ve bulut sunucularına yazılması için 6.5s bulut senkronizasyon ve 4s teardown süresi eklenmiştir.
+## 8. Doğrudan Yükleme Kuralları (Native Uploads)
+*   **Metin Ayıklama Kısıtlaması:** PDF, Word, Excel, PowerPoint, Görsel, Ses/Video ve Kod dosyalarında verileri yerelde metne dönüştürme yaklaşımı kaldırılmış, tüm desteklenen formatların `--file` parametresi ile doğrudan Gemini arayüzüne yüklenmesi kurala bağlanmıştır.
