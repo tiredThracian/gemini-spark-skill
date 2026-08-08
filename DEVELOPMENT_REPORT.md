@@ -7,26 +7,36 @@ Bu rapor, Google Antigravity için tasarlanan **Thracian Skills** deposunda yap�
 ## 1. Mimari Yapı: Thracian Skills Koleksiyonu (Multi-Skill Monorepo)
 Proje, modüler ve genel amaçlı bir **Thracian Skills** koleksiyonu halinde yapılandırılmıştır:
 *   **Klasör Yapısı:** Tüm yetenekler `skills/` dizini altında bağımsız klasörler halinde barındırılır:
-    *   `skills/eli5/`: Basitleştirilmiş açıklama ve benzetim yeteneği (ELI5 Skill).
+    *   `skills/engineering-eli5/`: Üst Düzey Mühendislik & Hibet/Yatırım Sunum Yeteneği.
+    *   `skills/eli5/`: Genel basitleştirilmiş açıklama ve benzetim yeteneği.
     *   `skills/gemini-spark/`: Gemini Spark Playwright otomasyon motoru.
 *   **Esnek Kurulum Aracı (`setup.bat`):**
     *   `setup.bat` veya `setup.bat all`: Depodaki tüm yetenekleri otomatik kurar.
-    *   `setup.bat <yetenek_adi>`: Sadece belirtilen yeteneği (ör. `setup.bat eli5`) hedef Antigravity dizinine (`.gemini/config/skills/<yetenek_adi>`) kurar.
+    *   `setup.bat <yetenek_adi>`: Sadece belirtilen yeteneği (ör. `setup.bat engineering-eli5`) hedef Antigravity dizinine (`.gemini/config/skills/<yetenek_adi>`) kurar.
     *   `setup.bat list`: Depoda mevcut tüm yetenekleri listeler.
 
 ---
 
-## 2. ELI5 Yeteneği (`skills/eli5`)
-*   **Derin Araştırma ve Sentez:** Gemini Spark kullanılarak Cognitive Load Theory (CLT), Gentner'in Structure-Mapping Theory (SMT) ve Feynman Tekniği üzerine derin araştırma yapılmış, sentezlenen rehber `skills/eli5/references/ELI5_RESEARCH_GUIDE.md` dosyasına aktarılmıştır.
-*   **5 Aşamalı Düzen:** Her açıklama 💡 Tek Cümlelik Benzetim, 📖 Hikaye/Analoji, ⚙️ Gerçekte Nasıl Çalışır (Köprü), 🚀 Neden Önemli ve ❓ Hızlı Kontrol soru yapısıyla sunulur.
-*   **Çalıştırma Modları:** `--child` (Ages 5-8), `--beginner` (Lise seviyesi), `--progressive` (3 seviyeli derinlik) ve `--analogy-only` (Birebir benzetim tablosu).
+## 2. Üst Düzey Mühendislik ELI5 Yeteneği (`skills/engineering-eli5`)
+*   **Yönetici ve Ar-Ge Direktörü Persona Odaklı:** Karmaşık mühendislik ve Ar-Ge projelerini teknik değerini yitirmeden Yönetim Kurulu, Hibe Değerlendirme Komiteleri ve Genel İzleyici kitlesine sunma altyapısı.
+*   **Üç Farklı Çalıştırma Modu:**
+    1.  **`--executive` / `--director` (Varsayılan):** CO-STAR Çerçevesi ile Sezgisel Operasyonel Benzetim ➔ Mimari Darboğaz & Çözüm 📊 Stratejik ve Finansal ROI.
+    2.  **`--grant` (Hibe ve Başvuru Modu):** DARPA Heilmeier Catechism + RISEN Çerçevesi ile Hedefler ➔ Mevcut Teknolojik Kısıtlar ➔ Teknik Yenilik 📈 TRL İlerleme Yolu (örn. TRL 3 ➔ TRL 6) 📊 Karşılaştırmalı Metrik Tablosu 🛡️ Risk Azaltma ve Ekonomik Etki.
+    3.  **`--pitch` (Yatırımcı ve Paydaş Sunumu Modu):** NABC Çerçevesi ile Pazar İhtiyacı 🛡️ Teknolojik Hendek (Proprietary IP) 💰 Ölçülebilir Müşteri Faydası / Birim Ekonomisi 🏰 Patent ve Savunulabilirlik 🚀 Ticarileşme Yol Haritası.
+*   **Rehber Doküman:** `skills/engineering-eli5/references/EXECUTIVE_ENGINEERING_FRAMEWORK.md`.
 
 ---
 
-## 3. Gemini Spark Yeteneği Özellikleri (`skills/gemini-spark`)
-*   **Çoklu Hesap Desteği (`--account`):** Farklı Google hesapları (`work`, `personal`, `research`) ile profil izoleli çalışma.
-*   **CDP Paralel Sekme Desteği (`--cdp`):** Aynı Google hesabında birden fazla görevi eşzamanlı paralel sekmelerde yürütme.
-*   **Birebir Yanıt Modu (`verbatim`):** Yanıtların özetlenmeden tam kopyasının aktarılması.
+## 3. Genel ELI5 Yeteneği (`skills/eli5`)
+*   **Derin Araştırma ve Sentez:** Cognitive Load Theory (CLT), Gentner'in Structure-Mapping Theory (SMT) ve Feynman Tekniği sentezi (`skills/eli5/references/ELI5_RESEARCH_GUIDE.md`).
+*   **Çalıştırma Modları:** `--child` (Ages 5-8), `--beginner` (Lise seviyesi), `--progressive` (3 seviyeli derinlik) ve `--analogy-only`.
+
+---
+
+## 4. Gemini Spark Yeteneği Özellikleri (`skills/gemini-spark`)
+*   **Çoklu Hesap Desteği (`--account`):** Profil izoleli çalışma (`work`, `personal`, `research`).
+*   **CDP Paralel Sekme Desteği (`--cdp`):** Eşzamanlı paralel sekmeler.
+*   **Birebir Yanıt Modu (`verbatim`):** Yanıtların tam kopyası.
 *   **Başlık Yeniden Adlandırma (`rename`):** Sohbet ve görev kartı başlıklarını güncelleme.
-*   **Toplu Silme (`delete`):** Çoklu ID silme ve güncel kalan görev listesini otomatik döndürme.
-*   **Google Workspace Exporters:** Docs (.txt), Sheets (.xlsx), Slides (.pptx) ve üretilen görselleri otomatik yerel dizine indirme.
+*   **Toplu Silme (`delete`):** Çoklu ID silme ve güncel liste çıktısı.
+*   **Workspace Exporters:** Docs (.txt), Sheets (.xlsx), Slides (.pptx) ve görselleri indirme.
