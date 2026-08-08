@@ -12,6 +12,10 @@
 ```text
 thracian-skills/
 ├── skills/
+│   ├── eli5/                      <-- Explain Like I'm 5 Skill
+│   │   ├── SKILL.md
+│   │   └── references/
+│   │       └── ELI5_RESEARCH_GUIDE.md
 │   ├── gemini-spark/              <-- Gemini Spark Automation Skill
 │   │   ├── SKILL.md
 │   │   └── scripts/
@@ -29,6 +33,7 @@ thracian-skills/
 
 | Skill Name | Description | Path |
 | :--- | :--- | :--- |
+| **`eli5`** | Explains complex technical, scientific, financial, or academic topics in crystal-clear "Explain Like I'm 5" terms using cross-domain analogies, cognitive load reduction, progressive depth tiers (`--child`, `--beginner`, `--progressive`), and zero jargon. | [`skills/eli5/SKILL.md`](file:///skills/eli5/SKILL.md) |
 | **`gemini-spark`** | Advanced Playwright automation engine for Google Gemini Spark (multi-turn context, multi-account support, CDP parallel execution, verbatim responses, batch deletion, workspace file exports). | [`skills/gemini-spark/SKILL.md`](file:///skills/gemini-spark/SKILL.md) |
 
 ---
@@ -48,8 +53,9 @@ cd thracian-skills
     ```cmd
     setup.bat
     ```
-*   **Install a SINGLE Skill (e.g., `gemini-spark`)**:
+*   **Install a SINGLE Skill (e.g., `eli5` or `gemini-spark`)**:
     ```cmd
+    setup.bat eli5
     setup.bat gemini-spark
     ```
 *   **List All Available Skills**:
@@ -64,6 +70,10 @@ cd thracian-skills
 To install only a specific skill manually, copy its folder from `skills/<skill_name>` to your local Antigravity config directory:
 
 ```powershell
+# Copy ELI5 skill
+Copy-Item -Path "skills/eli5" -Destination "$env:USERPROFILE\.gemini\config\skills\eli5" -Recurse -Force
+
+# Copy Gemini Spark skill
 Copy-Item -Path "skills/gemini-spark" -Destination "$env:USERPROFILE\.gemini\config\skills\gemini-spark" -Recurse -Force
 ```
 
