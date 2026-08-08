@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 echo ==========================================================
-echo       Antigravity Multi-Skill Setup Tool
+echo       Thracian Skills Setup Tool
 echo ==========================================================
 echo.
 
@@ -26,7 +26,7 @@ if "%TARGET_SKILL%"=="" goto :InstallAll
 goto :InstallSingle
 
 :ListSkills
-echo Available Skills in Repository:
+echo Available Skills in Thracian Skills Repository:
 echo.
 for /d %%D in ("%SKILLS_SOURCE_DIR%\*") do (
     echo   - %%~nxD
@@ -94,7 +94,7 @@ exit /b 0
 :Finish
 echo.
 echo ==========================================================
-echo [SUCCESS] Skill installation completed!
+echo [SUCCESS] Thracian Skills installation completed!
 echo ==========================================================
 echo.
 exit /b 0

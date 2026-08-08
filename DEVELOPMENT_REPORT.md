@@ -1,11 +1,11 @@
-# 📊 Geliştirme Raporu: Antigravity Çoklu Yetenek Deposu (Multi-Skill Monorepo)
+# 📊 Geliştirme Raporu: Thracian Skills (Antigravity Çoklu Yetenek Deposu)
 
-Bu rapor, Google Antigravity için tasarlanan yetenek deposunda yapılan mimari dönüşümü ve çoklu yetenek (multi-skill monorepo) yapısını detaylandırmaktadır.
+Bu rapor, Google Antigravity için tasarlanan **Thracian Skills** deposunda yapılan mimari dönüşümü ve çoklu yetenek (multi-skill monorepo) yapısını detaylandırmaktadır.
 
 ---
 
-## 1. Mimari Dönüşüm: Çoklu Yetenek Koleksiyonu (Multi-Skill Monorepo)
-Proje, tek bir skill ile sınırlı kalmayıp genel amaçlı bir **Antigravity Yetenek Koleksiyonu** haline getirilmiştir:
+## 1. Mimari Dönüşüm: Thracian Skills Koleksiyonu (Multi-Skill Monorepo)
+Proje, genel amaçlı bir **Thracian Skills** koleksiyonu haline getirilmiştir:
 *   **Klasör Yapısı:** Tüm yetenekler `skills/` dizini altında modüler ve bağımsız klasörler halinde yapılandırılmıştır:
     *   `skills/gemini-spark/`: Gemini Spark Playwright otomasyon motoru.
     *   `skills/<gelecek-yetenekler>/`: Zamanla eklenecek yeni yetenekler.

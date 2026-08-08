@@ -1,16 +1,16 @@
-# 🚀 Antigravity Agent Skills Collection
+# 🏛️ Thracian Skills — Antigravity Agent Skills Collection
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Antigravity Ready](https://img.shields.io/badge/Antigravity-Skills%20Monorepo-purple.svg)](https://github.com/tiredThracian/gemini-spark-skill)
+[![Antigravity Ready](https://img.shields.io/badge/Antigravity-Thracian%20Skills-purple.svg)](https://github.com/tiredThracian/thracian-skills)
 
-A general-purpose monorepo collection of modular agent skills for **Google Antigravity (AGY)** agents. You can install **all skills** at once or select **individual skills** on demand.
+**Thracian Skills** is a general-purpose monorepo collection of modular, production-ready agent skills for **Google Antigravity (AGY)** agents. You can install **all skills** at once or select **individual skills** on demand.
 
 ---
 
 ## 📂 Repository Structure
 
 ```text
-gemini-spark-skill/
+thracian-skills/
 ├── skills/
 │   ├── gemini-spark/              <-- Gemini Spark Automation Skill
 │   │   ├── SKILL.md
@@ -40,8 +40,8 @@ gemini-spark-skill/
 Clone the repository and run `setup.bat`:
 
 ```cmd
-git clone https://github.com/tiredThracian/gemini-spark-skill.git
-cd gemini-spark-skill
+git clone https://github.com/tiredThracian/thracian-skills.git
+cd thracian-skills
 ```
 
 *   **Install ALL Skills**:
@@ -71,7 +71,7 @@ Copy-Item -Path "skills/gemini-spark" -Destination "$env:USERPROFILE\.gemini\con
 
 ## ➕ Adding New Skills
 
-To contribute or add a new skill to this collection:
+To contribute or add a new skill to **Thracian Skills**:
 1. Create a new directory under `skills/<your-skill-name>/`.
 2. Add a `SKILL.md` file containing instructions and metadata.
 3. If helper scripts or Node packages are required, place them inside `skills/<your-skill-name>/scripts/`.
