@@ -1,89 +1,100 @@
 @echo off
-chcp 65001 >nul
+setlocal enabledelayedexpansion
+
 echo ==========================================================
-echo       Gemini Spark Yeteneği Kurulum Aracı
+echo       Antigravity Multi-Skill Setup Tool
 echo ==========================================================
 echo.
 
-:: 1. Node.js Kontrolü
 where node >nul 2>nul
 if %errorlevel% neq 0 (
-    echo [HATA] Node.js bilgisayarınızda yüklü bulunamadı!
-    echo Lütfen önce https://nodejs.org/ adresinden Node.js indirip kurun.
+    echo [ERROR] Node.js is not installed!
+    echo Please install Node.js from https://nodejs.org/ first.
     echo.
-    pause
     exit /b 1
 )
 
-:: 2. Global Dizinlerin Tanımlanması
-set "GLOBAL_SPARK_DIR=%USERPROFILE%\.gemini\config\skills\gemini-spark"
+set "SKILLS_SOURCE_DIR=%~dp0skills"
+set "GLOBAL_SKILLS_DIR=%USERPROFILE%\.gemini\config\skills"
 
-echo [1/4] Yetenek dosyaları global dizine yükleniyor...
-echo Spark Hedef: %GLOBAL_SPARK_DIR%
+if not exist "%GLOBAL_SKILLS_DIR%" mkdir "%GLOBAL_SKILLS_DIR%"
 
-:: Geçici hariç tutma dosyası oluştur
-echo \node_modules\ > "%temp%\exclude_spark.txt"
-echo \chrome-profile\ >> "%temp%\exclude_spark.txt"
-echo \.git\ >> "%temp%\exclude_spark.txt"
-echo last-chat-url.txt >> "%temp%\exclude_spark.txt"
-echo last-chat-list.json >> "%temp%\exclude_spark.txt"
+set "TARGET_SKILL=%~1"
 
-:: Hedef klasörü oluştur
-if not exist "%GLOBAL_SPARK_DIR%" mkdir "%GLOBAL_SPARK_DIR%"
+if /i "%TARGET_SKILL%"=="list" goto :ListSkills
+if "%TARGET_SKILL%"=="" goto :InstallAll
+goto :InstallSingle
 
-:: Dosyaları kopyala
-xcopy /E /I /Y /EXCLUDE:%temp%\exclude_spark.txt "%~dp0gemini-spark\*" "%GLOBAL_SPARK_DIR%" >nul
-
-del "%temp%\exclude_spark.txt"
-
-echo [OK] Dosyalar başarıyla kopyalandı!
+:ListSkills
+echo Available Skills in Repository:
 echo.
+for /d %%D in ("%SKILLS_SOURCE_DIR%\*") do (
+    echo   - %%~nxD
+)
+echo.
+echo Usage:
+echo   setup.bat               : Installs ALL skills
+echo   setup.bat [skill_name]  : Installs a specific skill (e.g. setup.bat gemini-spark)
+echo   setup.bat list          : Lists available skills
+echo.
+exit /b 0
 
-:: 3. Bağımlılıkların Yüklenmesi
-cd /d "%GLOBAL_SPARK_DIR%\scripts"
+:InstallAll
+echo [INFO] Installing ALL skills...
+for /d %%D in ("%SKILLS_SOURCE_DIR%\*") do (
+    call :InstallSkill "%%~nxD"
+)
+goto :Finish
 
-echo [2/4] Bağımlılıklar yükleniyor (npm install)...
-call npm install
-if %errorlevel% neq 0 (
-    echo [HATA] Bağımlılıklar yüklenirken hata oluştu!
-    pause
+:InstallSingle
+if not exist "%SKILLS_SOURCE_DIR%\%TARGET_SKILL%" (
+    echo [ERROR] Skill '%TARGET_SKILL%' not found!
+    echo Run 'setup.bat list' to view available skills.
     exit /b 1
 )
+echo [INFO] Installing single skill: '%TARGET_SKILL%'...
+call :InstallSkill "%TARGET_SKILL%"
+goto :Finish
 
-echo [3/4] Playwright tarayıcı bileşenleri kuruluyor...
-call npx playwright install chromium
-if %errorlevel% neq 0 (
-    echo [HATA] Tarayıcı bileşenleri kurulurken hata oluştu!
-    pause
-    exit /b 1
+:InstallSkill
+set "SKILL_NAME=%~1"
+set "SRC_PATH=%SKILLS_SOURCE_DIR%\%SKILL_NAME%"
+set "DEST_PATH=%GLOBAL_SKILLS_DIR%\%SKILL_NAME%"
+
+echo.
+echo ----------------------------------------------------------
+echo Installing: %SKILL_NAME%
+echo Destination: %DEST_PATH%
+echo ----------------------------------------------------------
+
+if not exist "%DEST_PATH%" mkdir "%DEST_PATH%"
+
+echo \node_modules\ > "%temp%\exclude_skills.txt"
+echo \chrome-profile\ >> "%temp%\exclude_skills.txt"
+echo \.git\ >> "%temp%\exclude_skills.txt"
+echo last-chat-url.txt >> "%temp%\exclude_skills.txt"
+echo last-chat-list.json >> "%temp%\exclude_skills.txt"
+
+xcopy /E /I /Y /EXCLUDE:%temp%\exclude_skills.txt "%SRC_PATH%\*" "%DEST_PATH%" >nul
+del "%temp%\exclude_skills.txt" 2>nul
+
+if exist "%DEST_PATH%\scripts\package.json" (
+    echo [%SKILL_NAME%] Installing npm dependencies...
+    cd /d "%DEST_PATH%\scripts"
+    call npm install --no-audit --no-fund
+    if exist "%DEST_PATH%\scripts\index.js" (
+        echo [%SKILL_NAME%] Verifying Playwright Chromium browser...
+        call npx playwright install chromium
+    )
 )
 
-echo.
-echo [4/4] Google Oturum Açma Ekranı Hazırlanıyor...
-echo.
-echo ==========================================================
-echo TALİMATLAR:
-echo 1. Açılacak Chrome penceresinde Google hesabınızla giriş yapın.
-echo 2. gemini.google.com sayfasına giderek sohbet ekranını görün.
-echo 3. Giriş tamamlandıktan sonra o açılan Chrome penceresini KAPATIN.
-echo 4. Tarayıcıyı kapattıktan sonra buradaki tuşa basarak kurulumu bitirin.
-echo ==========================================================
-echo.
-pause
+echo [OK] %SKILL_NAME% successfully installed!
+exit /b 0
 
-:: Chrome'u özel profil ve debugging portuyla başlat
-start chrome --remote-debugging-port=9222 --user-data-dir="%GLOBAL_SPARK_DIR%\chrome-profile"
-
-echo.
-echo Giriş yaptıysanız ve Chrome penceresini kapattıysanız...
-pause
-
+:Finish
 echo.
 echo ==========================================================
-echo [TEBRİKLER] Gemini Spark Yeteneği Yüklendi!
-echo.
-echo Artık Antigravity üzerinden Gemini Spark yeteneğini
-echo kullanmaya başlayabilirsiniz.
+echo [SUCCESS] Skill installation completed!
 echo ==========================================================
 echo.
-pause
+exit /b 0
